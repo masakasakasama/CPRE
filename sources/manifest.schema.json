@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["updatedAt", "sources"],
+  "properties": {
+    "updatedAt": { "type": "string", "format": "date" },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "publisher", "language", "version", "sourcePageUrl", "downloadUrl", "mediaType", "sha256", "usage", "enabled"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "title": { "type": "string", "minLength": 1 },
+          "publisher": { "const": "IREB e.V." },
+          "language": { "const": "en" },
+          "version": { "type": "string", "minLength": 1 },
+          "publishedAt": { "type": "string", "format": "date" },
+          "sourcePageUrl": { "type": "string", "format": "uri" },
+          "downloadUrl": { "type": "string", "format": "uri" },
+          "mediaType": { "enum": ["application/pdf", "application/zip"] },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "usage": { "enum": ["extract", "rules-only", "reference-only"] },
+          "enabled": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
