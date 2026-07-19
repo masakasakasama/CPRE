@@ -10,8 +10,8 @@ An unofficial, mobile-first study web app for people taking the IREB CPRE Founda
 - 45 independently written questions across single-choice, multiple-choice, and true/false formats
 - 45-question, 75-minute mock exam with scoring based on the published examination rules
 - Wrong-answer review, unit completion, bookmarks, and mock history
-- Active-exam recovery and progress persistence in browser local storage
-- Snapshot share links for moving progress between devices
+- Private GitHub-backed progress and active-exam synchronization across devices
+- Browser storage used as an offline cache, with snapshot links as an additional backup
 - Responsive dark interface designed for Android and desktop browsers
 - Visible source, version, chapter, and educational-objective references
 
@@ -58,9 +58,11 @@ npm run test
 
 ## Data and synchronization
 
-Study state is stored locally under the `cpre-english-study:v1` namespace. No account, API key, analytics identity, or official-document text is stored.
+The server API stores study progress and active-exam state as `progress.json` in the private `masakasakasama/CPRE-data` repository. Each save creates Git history. The GitHub token is server-side only and must be restricted to Contents read/write access for that single repository.
 
-The share action creates a URL containing a one-time progress snapshot. It does **not** provide live synchronization. Real-time cross-device sync would require a server-side data service and is intentionally outside this static-hosting MVP.
+Browser keys `cpre-english-study:v1` and `cpre-english-study:exam:v1` remain as an offline cache. On launch the app loads the private GitHub record; changes are debounced and committed back through `/api/progress`. Snapshot links remain available for manual backup.
+
+Required server environment variables are documented in `.env.example`. Owner-only Sites deployments may set `OAI_SITE_AUTH=true`; other deployments must provide a server-side `CPRE_SYNC_KEY` and send it from the session-only sync field. Never expose `GITHUB_PROGRESS_TOKEN` to client code.
 
 ## Limitations
 
@@ -68,5 +70,6 @@ The share action creates a URL containing a one-time progress snapshot. It does 
 - The app does not guarantee an official examination result.
 - The first release contains one 45-question bank; a larger bank and independent language review are planned.
 - Source-status refresh verifies reachability while the scheduled workflow verifies pinned file hashes.
+- GitHub Pages cannot host the synchronization API; use Sites or Vercel for the synchronized app.
 
 Continue development from [`handoff.md`](handoff.md).

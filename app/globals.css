@@ -198,6 +198,15 @@ h1 { letter-spacing: -.045em; }
 .policy-grid article { padding: 27px; }
 .policy-grid h2 { margin: 10px 0; }
 .policy-grid p { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.sync-panel { display: flex; flex-direction: column; align-items: flex-start; }
+.sync-state { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; margin: 4px 0 15px; }
+.sync-state i { width: 7px; height: 7px; border-radius: 50%; background: #ffb85d; }
+.sync-state.synced i { background: var(--accent); box-shadow: 0 0 10px rgba(199,243,107,.5); }
+.sync-state.saving i, .sync-state.loading i { background: #94c9ff; }
+.sync-state.offline i { background: var(--danger); }
+.sync-panel label { width: 100%; display: grid; gap: 7px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.sync-panel input { width: 100%; height: 42px; border: 1px solid var(--line); border-radius: 9px; background: #11151a; color: var(--text); padding: 0 12px; }
+.sync-actions { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; margin-top: auto; padding-top: 17px; }
 
 footer { border-top: 1px solid var(--line); margin-top: 60px; padding: 22px 0; color: #69727e; display: flex; justify-content: space-between; gap: 20px; font-size: 10px; }
 footer button { border: 0; background: none; color: var(--muted); cursor: pointer; }

@@ -1,39 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { questions, sources, units, type Question } from "./data";
+import { initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, type ActiveExam, type MockResult, type Progress } from "./progress";
 
 type View = "home" | "learn" | "practice" | "exam" | "review" | "sources";
-type AnswerRecord = { selected: number[]; correct: boolean; lastAt: string };
-type MockResult = { at: string; percent: number; correct: number; points: number; total: number };
-type Progress = {
-  schema: 1;
-  answered: Record<string, AnswerRecord>;
-  review: string[];
-  completedUnits: number[];
-  bookmarks: string[];
-  mockHistory: MockResult[];
-  lastSourceCheck?: string;
-};
-type ActiveExam = {
-  order: string[];
-  answers: Record<string, number[]>;
-  index: number;
-  endsAt: number;
-};
+type SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";
 
 const STORAGE_KEY = "cpre-english-study:v1";
 const EXAM_KEY = "cpre-english-study:exam:v1";
 const APP_VERSION = "0.1.0";
-
-const initialProgress: Progress = {
-  schema: 1,
-  answered: {},
-  review: [],
-  completedUnits: [],
-  bookmarks: [],
-  mockHistory: [],
-};
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -114,28 +90,98 @@ export default function Home() {
   const [examResult, setExamResult] = useState<MockResult | null>(null);
   const [now, setNow] = useState(Date.now());
   const [sourceStatus, setSourceStatus] = useState<"idle" | "checking" | "online" | "cached">("idle");
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
+  const [syncKey, setSyncKey] = useState("");
+  const [remoteReady, setRemoteReady] = useState(false);
   const [toast, setToast] = useState("");
+  const lastSynced = useRef("");
+
+  function syncHeaders(key = syncKey): Record<string, string> {
+    return key ? { "x-cpre-sync-key": key } : {};
+  }
+
+  async function saveRemote(nextProgress = progress, nextExam = exam, key = syncKey) {
+    const document = makeSyncDocument(nextProgress, nextExam);
+    const serialized = JSON.stringify({ progress: document.progress, activeExam: document.activeExam });
+    if (serialized === lastSynced.current) return true;
+    setSyncStatus("saving");
+    try {
+      const response = await fetch("/api/progress", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...syncHeaders(key) },
+        body: JSON.stringify(document),
+      });
+      if (response.status === 401 || response.status === 503) {
+        setSyncStatus("setup");
+        return false;
+      }
+      if (!response.ok) throw new Error("sync_failed");
+      lastSynced.current = serialized;
+      setSyncStatus("synced");
+      return true;
+    } catch {
+      setSyncStatus("offline");
+      return false;
+    }
+  }
 
   useEffect(() => {
+    let cancelled = false;
     try {
       const shared = new URLSearchParams(window.location.search).get("share");
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const decoded = shared ? JSON.parse(decodeURIComponent(escape(atob(shared.replace(/-/g, "+").replace(/_/g, "/"))))) : null;
-      const next = decoded?.schema === 1 ? decoded : stored ? JSON.parse(stored) : initialProgress;
-      // Restore the external browser snapshot after hydration.
+      const cachedSyncKey = sessionStorage.getItem("cpre-english-study:sync-key") || "";
+      // Restore the external browser cache before the first interactive render.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (next?.schema === 1) setProgress({ ...initialProgress, ...next });
+      if (cachedSyncKey) setSyncKey(cachedSyncKey);
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const decoded = shared ? parseProgress(JSON.parse(decodeURIComponent(escape(atob(shared.replace(/-/g, "+").replace(/_/g, "/")))))) : null;
+      const cached = stored ? parseProgress(JSON.parse(stored)) : null;
+      const next = decoded || cached || initialProgress;
       const storedExam = localStorage.getItem(EXAM_KEY);
+      let nextExam: ActiveExam | null = null;
       if (storedExam) {
-        const parsed = JSON.parse(storedExam) as ActiveExam;
-        if (parsed.endsAt > Date.now()) setExam(parsed);
+        const parsed = parseActiveExam(JSON.parse(storedExam));
+        if (parsed && parsed.endsAt > Date.now()) nextExam = parsed;
         else localStorage.removeItem(EXAM_KEY);
       }
+      setProgress(next);
+      if (nextExam) setExam(nextExam);
+      const restore = async () => {
+        setSyncStatus("loading");
+        try {
+          const response = await fetch("/api/progress", { headers: syncHeaders(cachedSyncKey), cache: "no-store" });
+          if (response.status === 401 || response.status === 503) {
+            if (!cancelled) setSyncStatus("setup");
+            return;
+          }
+          if (!response.ok) throw new Error("sync_failed");
+          const payload = await response.json() as { exists?: boolean; document?: unknown };
+          const remote = parseSyncDocument(payload.document);
+          if (!cancelled && payload.exists && remote && !decoded) {
+            setProgress(remote.progress);
+            setExam(remote.activeExam && remote.activeExam.endsAt > Date.now() ? remote.activeExam : null);
+            lastSynced.current = JSON.stringify({ progress: remote.progress, activeExam: remote.activeExam });
+            setSyncStatus("synced");
+          } else if (!cancelled) {
+            await saveRemote(next, nextExam, cachedSyncKey);
+          }
+        } catch {
+          if (!cancelled) setSyncStatus("offline");
+        } finally {
+          if (!cancelled) setRemoteReady(true);
+        }
+      };
+      void restore();
     } catch {
       setProgress(initialProgress);
+      setSyncStatus("offline");
+      setRemoteReady(true);
     } finally {
       setHydrated(true);
     }
+    return () => { cancelled = true; };
+    // Initial migration reads the existing browser cache before GitHub.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -150,6 +196,14 @@ export default function Home() {
     if (exam) localStorage.setItem(EXAM_KEY, JSON.stringify(exam));
     else localStorage.removeItem(EXAM_KEY);
   }, [exam, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !remoteReady) return;
+    const timeout = window.setTimeout(() => void saveRemote(progress, exam), 1200);
+    return () => window.clearTimeout(timeout);
+    // Save the latest combined progress/exam snapshot after local changes settle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress, exam, hydrated, remoteReady, syncKey]);
 
   useEffect(() => {
     if (!exam) return;
@@ -262,6 +316,34 @@ export default function Home() {
       window.prompt("Copy this progress link", url);
     }
   }
+
+  async function connectSync() {
+    if (syncKey) sessionStorage.setItem("cpre-english-study:sync-key", syncKey);
+    setSyncStatus("loading");
+    try {
+      const response = await fetch("/api/progress", { headers: syncHeaders(), cache: "no-store" });
+      if (response.status === 401 || response.status === 503) {
+        setSyncStatus("setup");
+        return;
+      }
+      if (!response.ok) throw new Error("sync_failed");
+      const payload = await response.json() as { exists?: boolean; document?: unknown };
+      const remote = parseSyncDocument(payload.document);
+      if (payload.exists && remote) {
+        setProgress(remote.progress);
+        setExam(remote.activeExam && remote.activeExam.endsAt > Date.now() ? remote.activeExam : null);
+        lastSynced.current = JSON.stringify({ progress: remote.progress, activeExam: remote.activeExam });
+        setSyncStatus("synced");
+      } else {
+        await saveRemote(progress, exam);
+      }
+      setRemoteReady(true);
+    } catch {
+      setSyncStatus("offline");
+    }
+  }
+
+  const syncLabel = syncStatus === "synced" ? "Synced to GitHub" : syncStatus === "saving" ? "Saving to GitHub…" : syncStatus === "loading" ? "Loading GitHub data…" : syncStatus === "setup" ? "GitHub sync needs setup" : "Offline · cached locally";
 
   function renderHome() {
     const latest = progress.mockHistory[0];
@@ -385,7 +467,7 @@ export default function Home() {
     const reviewQuestions = progress.review.map((id) => questions.find((question) => question.id === id)).filter(Boolean) as Question[];
     return (
       <>
-        <header className="page-head"><span className="eyebrow">REVIEW</span><h1>Turn misses into signals.</h1><p>Your queue stays on this device until you mark an item as mastered.</p></header>
+        <header className="page-head"><span className="eyebrow">REVIEW</span><h1>Turn misses into signals.</h1><p>Your queue is saved to private Git history and cached locally for offline use.</p></header>
         {!reviewQuestions.length ? <section className="empty panel"><span>✓</span><h2>Your review queue is clear.</h2><p>Missed practice and mock-exam questions will appear here.</p><button className="button primary" onClick={() => setView("practice")}>Practice now</button></section> : <div className="review-list">{reviewQuestions.map((question) => { const record = progress.answered[question.id]; return <article className="review-card panel" key={question.id}><div className="review-label"><span>EU {question.unit}</span><span>{question.eo}</span><span>{question.id}</span></div><h2>{question.prompt}</h2><p className="answer-line">Correct: {question.correct.map((index) => question.options[index]).join(" · ")}</p><p className="jp-note" lang="ja">{question.explanationJa}</p><div className="feedback-meta"><span>Keyword: {question.keyword}</span><span>{question.source}</span></div><div className="review-actions"><small>{record ? `Last attempt: ${record.correct ? "correct" : "incorrect"}` : "From mock exam"}</small><button className="button compact secondary" onClick={() => setProgress((current) => ({ ...current, review: current.review.filter((id) => id !== question.id) }))}>Mark mastered</button></div></article>; })}</div>}
       </>
     );
@@ -397,7 +479,7 @@ export default function Home() {
         <header className="page-head source-head"><div><span className="eyebrow">ABOUT & SOURCES</span><h1>Grounded, traceable, unofficial.</h1><p>Only the listed English IREB materials are used. Official long-form text and official practice questions are not republished.</p></div><button className="button secondary" onClick={() => void refreshSources()} disabled={sourceStatus === "checking"}>{sourceStatus === "checking" ? "Checking…" : "Refresh source status"}</button></header>
         <div className={`status-line ${sourceStatus === "cached" ? "warning" : ""}`}><i />{sourceStatus === "cached" ? `Offline — showing cached metadata. ${formatChecked(progress.lastSourceCheck)}` : `${sourceStatus === "online" ? "Official download center reached. " : ""}${formatChecked(progress.lastSourceCheck)}`}</div>
         <div className="source-list">{sources.map((source) => <a className="source-card panel" href={source.url} target="_blank" rel="noreferrer" key={source.id}><div><span>{source.id}</span><h2>{source.title}</h2><p>Version {source.version} · {source.chapter}</p></div><strong>↗</strong></a>)}</div>
-        <section className="policy-grid"><article className="panel"><span className="eyebrow">CONTENT POLICY</span><h2>Original questions only</h2><p>Question scenarios, prompts, options, and explanations are independently written from syllabus objectives. They are not official exam questions.</p></article><article className="panel"><span className="eyebrow">YOUR DATA</span><h2>Local by default</h2><p>Progress is stored in your browser. A share link contains a one-time snapshot; it does not create live cross-device sync.</p><button className="text-button" onClick={() => void shareProgress()}>Copy progress link →</button></article></section>
+        <section className="policy-grid"><article className="panel"><span className="eyebrow">CONTENT POLICY</span><h2>Original questions only</h2><p>Question scenarios, prompts, options, and explanations are independently written from syllabus objectives. They are not official exam questions.</p></article><article className="panel sync-panel"><span className="eyebrow">YOUR DATA</span><h2>Private GitHub sync</h2><p>Progress and active exams are committed to the private CPRE-data repository. Browser storage is only an offline cache.</p><div className={`sync-state ${syncStatus}`}><i />{syncLabel}</div>{syncStatus === "setup" && <label>Sync key<input type="password" value={syncKey} autoComplete="off" onChange={(event) => setSyncKey(event.target.value)} placeholder="Required outside the private Sites app" /></label>}<div className="sync-actions"><button className="button compact secondary" onClick={() => void connectSync()}>{syncStatus === "setup" ? "Connect" : "Sync now"}</button><button className="text-button" onClick={() => void shareProgress()}>Copy backup snapshot</button></div></article></section>
       </>
     );
   }
@@ -409,7 +491,7 @@ export default function Home() {
       <aside className="sidebar">
         <button className="brand" onClick={() => setView("home")}><span>CR</span><div><strong>CPRE</strong><small>English Study</small></div></button>
         <nav aria-label="Primary navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.id === "home" ? "⌂" : item.id === "learn" ? "≡" : item.id === "practice" ? "◇" : item.id === "exam" ? "◷" : "↺"}</i><span>{item.label}</span>{item.id === "review" && progress.review.length > 0 && <em>{progress.review.length}</em>}</button>)}</nav>
-        <div className="sidebar-foot"><button onClick={() => setView("sources")}>About & sources</button><button onClick={() => void shareProgress()}>Share progress</button><small>v{APP_VERSION} · Local storage</small></div>
+        <div className="sidebar-foot"><button onClick={() => setView("sources")}>About & sources</button><button onClick={() => void connectSync()}>{syncLabel}</button><small>v{APP_VERSION} · GitHub + offline cache</small></div>
       </aside>
       <main className="main-content">{view === "home" && renderHome()}{view === "learn" && renderLearn()}{view === "practice" && renderPractice()}{view === "exam" && renderExam()}{view === "review" && renderReview()}{view === "sources" && renderSources()}<footer><span>Unofficial CPRE Foundation Level study tool.</span><button onClick={() => setView("sources")}>Sources & copyright</button></footer></main>
       <nav className="bottom-nav" aria-label="Mobile navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.id === "home" ? "⌂" : item.id === "learn" ? "≡" : item.id === "practice" ? "◇" : item.id === "exam" ? "◷" : "↺"}</i><span>{item.short}</span></button>)}</nav>

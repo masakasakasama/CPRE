@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "content:validate": "node scripts/validate-content.ts",
     "sources:download": "node scripts/download-sources.ts",
     "sources:propose": "node scripts/download-sources.ts --propose",
