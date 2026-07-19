@@ -62,7 +62,7 @@ The server API stores study progress and active-exam state as `progress.json` in
 
 Browser keys `cpre-english-study:v1` and `cpre-english-study:exam:v1` remain as an offline cache. On launch the app loads the private GitHub record; changes are debounced and committed back through `/api/progress`. Snapshot links remain available for manual backup.
 
-Required server environment variables are documented in `.env.example`. Owner-only Sites deployments may set `OAI_SITE_AUTH=true`; other deployments must provide a server-side `CPRE_SYNC_KEY` and send it from the session-only sync field. Never expose `GITHUB_PROGRESS_TOKEN` to client code.
+Required server environment variables are documented in `.env.example`. Owner-only Sites deployments may set `OAI_SITE_AUTH=true`; other deployments must provide a server-side `CPRE_SYNC_KEY`. `GITHUB_PROGRESS_TOKEN` can be stored server-side, or an owner can enter a fine-grained token in the app. A browser-entered token is kept only in `sessionStorage`, sent only to the same-origin sync route, and must be restricted to `CPRE-data` with Contents read/write access.
 
 ## Limitations
 

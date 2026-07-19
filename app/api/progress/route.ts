@@ -22,8 +22,8 @@ function isAuthorized(request: Request) {
   return Boolean(expected && received && secureMatch(received, expected));
 }
 
-function githubHeaders() {
-  const token = process.env.GITHUB_PROGRESS_TOKEN;
+function githubHeaders(request: Request) {
+  const token = process.env.GITHUB_PROGRESS_TOKEN || request.headers.get("x-cpre-github-token");
   if (!token) return null;
   return {
     Accept: "application/vnd.github+json",
@@ -33,8 +33,8 @@ function githubHeaders() {
   };
 }
 
-async function readRemote() {
-  const headers = githubHeaders();
+async function readRemote(request: Request) {
+  const headers = githubHeaders(request);
   if (!headers) throw new Error("sync_not_configured");
   const response = await fetch(`https://api.github.com/repos/${repository}/contents/${filePath}?ref=${encodeURIComponent(branch)}`, { headers, cache: "no-store" });
   if (response.status === 404) return { document: null, sha: null };
@@ -56,7 +56,7 @@ function errorResponse(error: unknown) {
 export async function GET(request: Request) {
   if (!isAuthorized(request)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
-    const remote = await readRemote();
+    const remote = await readRemote(request);
     return NextResponse.json({ exists: Boolean(remote.document), document: remote.document });
   } catch (error) {
     return errorResponse(error);
@@ -77,9 +77,9 @@ export async function PUT(request: Request) {
   if (!document) return NextResponse.json({ error: "invalid_progress" }, { status: 400 });
 
   try {
-    const headers = githubHeaders();
+    const headers = githubHeaders(request);
     if (!headers) throw new Error("sync_not_configured");
-    const current = await readRemote();
+    const current = await readRemote(request);
     const body = {
       message: `Save CPRE progress ${document.savedAt}`,
       content: Buffer.from(`${JSON.stringify(document, null, 2)}\n`, "utf8").toString("base64"),
