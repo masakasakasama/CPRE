@@ -24,13 +24,13 @@
 
 ## 3. 採用技術
 
-- フロントエンド: React + TypeScript + Vite
+- フロントエンド: Next.js App Router + React + TypeScript（vinext/Viteで静的ビルド）
 - ルーティング: GitHub Pages のサブパスでも動作するハッシュベースのルーティング
-- データ検証: JSON Schema と Zod によるビルド時・実行時検証
-- 単体／コンポーネントテスト: Vitest + Testing Library
-- E2E／表示確認: Playwright（主要な模擬試験導線とモバイル幅）
+- データ検証: JSON Schema とNode.jsスクリプトによるビルド時検証
+- 単体テスト: Node.js test runner
+- 表示確認: Next.jsの本番ビルドと主要な模擬試験導線の手動確認
 - 静的解析: ESLint、Prettier、TypeScript `tsc --noEmit`
-- パッケージ管理: pnpm。Node.js と pnpm の版は設定ファイルとロックファイルで固定
+- パッケージ管理: npm。依存関係は `package-lock.json` で固定
 - 永続化: ブラウザの `localStorage` のみ。サーバー、アカウント、解析用個人データは持たない
 
 依存関係の正確な版は実装時に選定してロックする。PDF取得・抽出は Node.js で動く TypeScript スクリプトに統一し、アプリのビルド中に外部サイトへアクセスしない。
@@ -87,7 +87,7 @@
 ├─ README.md
 ├─ PLAN.md
 ├─ package.json
-├─ pnpm-lock.yaml
+├─ package-lock.json
 ├─ tsconfig.json
 ├─ vite.config.ts
 └─ vercel.json                     # Vercel向け静的配信設定
@@ -136,11 +136,11 @@
 
 ### 6.1 取得
 
-`pnpm sources:download` で manifest とスキーマを検証し、許可された資料だけを `data/raw/<source-id>/<version>/` に取得する。取得ログにはソースID、版、最終URL、バイト数、SHA-256、取得日時を残すが、ログもGitにはコミットしない。
+`npm run sources:download` で manifest とスキーマを検証し、許可された資料だけを `data/raw/<source-id>/<version>/` に取得する。取得ログにはソースID、版、最終URL、バイト数、SHA-256、取得日時を残すが、ログもGitにはコミットしない。
 
 ### 6.2 PDF抽出
 
-`pnpm sources:extract` は `usage: extract` のPDFだけを対象に、ページ単位のテキストと位置情報を `data/extracted/<source-id>/<sha256>/` に出力する。抽出対象は次の構造候補に限定する。
+`npm run sources:extract` は `usage: extract` のPDFだけを対象に、ページ単位のテキストと位置情報を `data/extracted/<source-id>/<sha256>/` に出力する。抽出対象は次の構造候補に限定する。
 
 - EU／章／節の番号と短い見出し
 - `EO x.y.z` の識別子、L1〜L3のCognitive Level、所属章
@@ -234,7 +234,7 @@ AIを執筆補助に使う場合も、入力は manifest 対象資料からロ�
 - 学習・練習モードでも問題文や選択肢の逐語訳は原則表示せず、英語のまま意味を判断する練習を優先する
 - 試験規則に合わせ、Single Choice、Multiple Choice、True/False statementsを扱う
 - Multiple Choiceは要求選択数を明示し、過剰選択時の採点を試験規則に合わせる
-- 初期リリースでは少なくとも90問の独自問題を用意し、各EUと各Cognitive Levelの偏りを検査する
+- MVPでは45問の独自問題を用意し、各EUと各Cognitive Levelの偏りを検査する。90問以上への拡張は次フェーズとする
 
 ### 9.3 45問・75分の模擬試験
 
@@ -305,26 +305,25 @@ AIを執筆補助に使う場合も、入力は manifest 対象資料からロ�
 
 `ci.yml` は pull request と `main` へのpushで次を実行する。
 
-1. 固定したNode.js／pnpmをセットアップ
-2. `pnpm install --frozen-lockfile`
-3. `pnpm lint`
-4. `pnpm typecheck`
-5. `pnpm test --run`
-6. `pnpm content:validate`
-7. `pnpm build`
-8. ビルド成果物に禁止ファイルや公式原文が含まれていないことを検査
+1. Node.jsをセットアップ
+2. `npm ci`
+3. `npm run lint`
+4. `npm run content:validate`
+5. `npm test`
+6. `npm run build`
+7. ビルド成果物に禁止ファイルや公式原文が含まれていないことを検査
 
 通常のCI／buildはネットワークから公式資料を取得せず、コミット済みの審査済み `data/content` だけを使う。ソース取得・ハッシュ確認は、権限と目的を分離した `verify-sources.yml` の手動実行または低頻度の定期実行で行う。
 
-GitHub Pagesでは `deploy-pages.yml` が `dist/` を公式Pages Actionで配信する。Vercelでは同じ `pnpm build` と `dist/` を使用する。APIやサーバーサイド機能に依存しないため、どちらでも同じ機能を提供できるようにする。デプロイはCI成功後だけ行い、最初は自動公開を有効にせず、内容レビュー後にリポジトリ設定で有効化する。
+GitHub PagesまたはVercelでは、同じ静的ビルド成果物を使用する。APIやサーバーサイド機能に依存しないため、どちらでも同じ機能を提供できるようにする。デプロイはCI成功後だけ行い、最初は自動公開を有効にせず、内容レビュー後にリポジトリ設定で有効化する。
 
 ## 14. 実装フェーズ
 
-1. **基盤**: Vite/React/TypeScript、品質ツール、CI、Pages/Vercel設定、`.gitignore`
+1. **基盤**: Next.js/React/TypeScript、品質ツール、CI、Pages/Vercel設定、`.gitignore`
 2. **ソース管理**: manifest／schema、公式URLと版の再確認、SHA-256固定、安全なダウンロード
 3. **抽出**: PDF抽出、章／EO／用語候補の正規化、差分検出
 4. **ドメインモデル**: 公開JSONスキーマ、出典参照、採点、模擬試験ブループリント
-5. **教材**: 日本語解説、英語キーワード、90問以上の独自問題、著作権・内容レビュー
+5. **教材**: 日本語解説、英語キーワード、MVP用45問の独自問題、著作権・内容レビュー
 6. **UI**: 学習、練習、模擬試験、復習、進捗、出典画面
 7. **永続化**: localStorage、移行、復元、エクスポート／インポート
 8. **検証**: 単体、コンポーネント、E2E、モバイル、アクセシビリティ、成果物監査
@@ -341,7 +340,7 @@ GitHub Pagesでは `deploy-pages.yml` が `dist/` を公式Pages Actionで配信
 - 英語版資料だけを根拠とし、日本語解説と英語キーワードが併記され、長文転載や公式問題の転用がない
 - すべての設問指示、問題文、選択肢が英語で、模擬試験中に日本語訳や日本語ヒントが表示されない
 - UI全体が英語で、日本語が表示されるのは回答後または復習時の解説だけである
-- 90問以上の独自問題から、45問・75分の模擬試験を完走できる
+- 45問の独自問題で、45問・75分の模擬試験を完走できる
 - 誤答復習と学習進捗がlocalStorageに保存・復元される
 - 主要機能がスマートフォン、キーボード、スクリーンリーダーで利用できる
 - GitHub Actionsでlint、typecheck、test、content validation、buildが成功する
@@ -349,3 +348,4 @@ GitHub Pagesでは `deploy-pages.yml` が `dist/` を公式Pages Actionで配信
 - READMEとアプリ内に出典、非公式性、著作権、免責、データ保存方針が明記される
 
 この計画のレビュー承認後に、フェーズ1から実装を開始する。
+
