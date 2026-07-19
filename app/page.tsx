@@ -92,15 +92,19 @@ export default function Home() {
   const [sourceStatus, setSourceStatus] = useState<"idle" | "checking" | "online" | "cached">("idle");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
   const [syncKey, setSyncKey] = useState("");
+  const [githubToken, setGithubToken] = useState("");
   const [remoteReady, setRemoteReady] = useState(false);
   const [toast, setToast] = useState("");
   const lastSynced = useRef("");
 
-  function syncHeaders(key = syncKey): Record<string, string> {
-    return key ? { "x-cpre-sync-key": key } : {};
+  function syncHeaders(key = syncKey, token = githubToken): Record<string, string> {
+    return {
+      ...(key ? { "x-cpre-sync-key": key } : {}),
+      ...(token ? { "x-cpre-github-token": token } : {}),
+    };
   }
 
-  async function saveRemote(nextProgress = progress, nextExam = exam, key = syncKey) {
+  async function saveRemote(nextProgress = progress, nextExam = exam, key = syncKey, token = githubToken) {
     const document = makeSyncDocument(nextProgress, nextExam);
     const serialized = JSON.stringify({ progress: document.progress, activeExam: document.activeExam });
     if (serialized === lastSynced.current) return true;
@@ -108,7 +112,7 @@ export default function Home() {
     try {
       const response = await fetch("/api/progress", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", ...syncHeaders(key) },
+        headers: { "Content-Type": "application/json", ...syncHeaders(key, token) },
         body: JSON.stringify(document),
       });
       if (response.status === 401 || response.status === 503) {
@@ -130,9 +134,11 @@ export default function Home() {
     try {
       const shared = new URLSearchParams(window.location.search).get("share");
       const cachedSyncKey = sessionStorage.getItem("cpre-english-study:sync-key") || "";
+      const cachedGithubToken = sessionStorage.getItem("cpre-english-study:github-token") || "";
       // Restore the external browser cache before the first interactive render.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (cachedSyncKey) setSyncKey(cachedSyncKey);
+      if (cachedGithubToken) setGithubToken(cachedGithubToken);
       const stored = localStorage.getItem(STORAGE_KEY);
       const decoded = shared ? parseProgress(JSON.parse(decodeURIComponent(escape(atob(shared.replace(/-/g, "+").replace(/_/g, "/")))))) : null;
       const cached = stored ? parseProgress(JSON.parse(stored)) : null;
@@ -149,7 +155,7 @@ export default function Home() {
       const restore = async () => {
         setSyncStatus("loading");
         try {
-          const response = await fetch("/api/progress", { headers: syncHeaders(cachedSyncKey), cache: "no-store" });
+          const response = await fetch("/api/progress", { headers: syncHeaders(cachedSyncKey, cachedGithubToken), cache: "no-store" });
           if (response.status === 401 || response.status === 503) {
             if (!cancelled) setSyncStatus("setup");
             return;
@@ -163,7 +169,7 @@ export default function Home() {
             lastSynced.current = JSON.stringify({ progress: remote.progress, activeExam: remote.activeExam });
             setSyncStatus("synced");
           } else if (!cancelled) {
-            await saveRemote(next, nextExam, cachedSyncKey);
+            await saveRemote(next, nextExam, cachedSyncKey, cachedGithubToken);
           }
         } catch {
           if (!cancelled) setSyncStatus("offline");
@@ -203,7 +209,7 @@ export default function Home() {
     return () => window.clearTimeout(timeout);
     // Save the latest combined progress/exam snapshot after local changes settle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [progress, exam, hydrated, remoteReady, syncKey]);
+  }, [progress, exam, hydrated, remoteReady, syncKey, githubToken]);
 
   useEffect(() => {
     if (!exam) return;
@@ -319,6 +325,7 @@ export default function Home() {
 
   async function connectSync() {
     if (syncKey) sessionStorage.setItem("cpre-english-study:sync-key", syncKey);
+    if (githubToken) sessionStorage.setItem("cpre-english-study:github-token", githubToken);
     setSyncStatus("loading");
     try {
       const response = await fetch("/api/progress", { headers: syncHeaders(), cache: "no-store" });
@@ -479,7 +486,7 @@ export default function Home() {
         <header className="page-head source-head"><div><span className="eyebrow">ABOUT & SOURCES</span><h1>Grounded, traceable, unofficial.</h1><p>Only the listed English IREB materials are used. Official long-form text and official practice questions are not republished.</p></div><button className="button secondary" onClick={() => void refreshSources()} disabled={sourceStatus === "checking"}>{sourceStatus === "checking" ? "Checking…" : "Refresh source status"}</button></header>
         <div className={`status-line ${sourceStatus === "cached" ? "warning" : ""}`}><i />{sourceStatus === "cached" ? `Offline — showing cached metadata. ${formatChecked(progress.lastSourceCheck)}` : `${sourceStatus === "online" ? "Official download center reached. " : ""}${formatChecked(progress.lastSourceCheck)}`}</div>
         <div className="source-list">{sources.map((source) => <a className="source-card panel" href={source.url} target="_blank" rel="noreferrer" key={source.id}><div><span>{source.id}</span><h2>{source.title}</h2><p>Version {source.version} · {source.chapter}</p></div><strong>↗</strong></a>)}</div>
-        <section className="policy-grid"><article className="panel"><span className="eyebrow">CONTENT POLICY</span><h2>Original questions only</h2><p>Question scenarios, prompts, options, and explanations are independently written from syllabus objectives. They are not official exam questions.</p></article><article className="panel sync-panel"><span className="eyebrow">YOUR DATA</span><h2>Private GitHub sync</h2><p>Progress and active exams are committed to the private CPRE-data repository. Browser storage is only an offline cache.</p><div className={`sync-state ${syncStatus}`}><i />{syncLabel}</div>{syncStatus === "setup" && <label>Sync key<input type="password" value={syncKey} autoComplete="off" onChange={(event) => setSyncKey(event.target.value)} placeholder="Required outside the private Sites app" /></label>}<div className="sync-actions"><button className="button compact secondary" onClick={() => void connectSync()}>{syncStatus === "setup" ? "Connect" : "Sync now"}</button><button className="text-button" onClick={() => void shareProgress()}>Copy backup snapshot</button></div></article></section>
+        <section className="policy-grid"><article className="panel"><span className="eyebrow">CONTENT POLICY</span><h2>Original questions only</h2><p>Question scenarios, prompts, options, and explanations are independently written from syllabus objectives. They are not official exam questions.</p></article><article className="panel sync-panel"><span className="eyebrow">YOUR DATA</span><h2>Private GitHub sync</h2><p>Progress and active exams are committed to the private CPRE-data repository. Browser storage is only an offline cache.</p><div className={`sync-state ${syncStatus}`}><i />{syncLabel}</div>{syncStatus === "setup" && <><label>Fine-grained GitHub token<input type="password" value={githubToken} autoComplete="off" onChange={(event) => setGithubToken(event.target.value)} placeholder="github_pat_…" /></label><p className="sync-help">Create it for <strong>CPRE-data</strong> only, with <strong>Contents: Read and write</strong>. It stays in this browser tab session and is never committed.</p><a className="text-button" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create token on GitHub ↗</a></>}<div className="sync-actions"><button className="button compact secondary" onClick={() => void connectSync()} disabled={syncStatus === "setup" && !githubToken}>{syncStatus === "setup" ? "Connect" : "Sync now"}</button><button className="text-button" onClick={() => void shareProgress()}>Copy backup snapshot</button></div></article></section>
       </>
     );
   }
