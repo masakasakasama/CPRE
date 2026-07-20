@@ -364,7 +364,7 @@ export default function Home() {
     const courseGroups = [
       { range: "EU 1–2", title: "まず、要求工学の土台", description: "要求とは何か、なぜ必要か、9つの基本原則を押さえます。", keywords: "requirement · stakeholder · validation" },
       { range: "EU 3–5", title: "次に、実務での進め方", description: "文書・モデル・プロトタイプで表し、要求を引き出して合意し、プロセスを組み立てます。", keywords: "work product · elicitation · RE process" },
-      { range: "EU 6–7", title: "最後に、管理とツール", description: "トレース、変更、優先順位、ツール導入までを整理します。", keywords: "traceability · change request · RE tool" },
+      { range: "EU 6–7", title: "最後に、管理とツール", description: "要求と関連資料のつながり、変更、優先順位、ツール導入までを整理します。", keywords: "traceability · change request · RE tool" },
     ];
     return (
       <main className="intro-shell" lang="ja">

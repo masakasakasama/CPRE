@@ -8,11 +8,13 @@ const { questions, sources } = await import(new URL("../app/data.ts", import.met
 const manifest = JSON.parse(await readFile(join(root, "sources", "manifest.json"), "utf8"));
 const errors: string[] = [];
 const japanese = /[\u3040-\u30ff\u3400-\u9fff]/;
+const unnaturalJapanese = /解決空間|要求源|作業構造|下流成果物|無批判/;
 
 if (questions.length !== 45) errors.push(`Expected 45 questions, found ${questions.length}`);
 if (new Set(questions.map((question: { id: string }) => question.id)).size !== questions.length) errors.push("Question IDs must be unique");
 for (const question of questions) {
   if (japanese.test(question.prompt) || question.options.some((option: string) => japanese.test(option))) errors.push(`${question.id}: Japanese text found in an exam field`);
+  if (!question.explanationJa || unnaturalJapanese.test(question.explanationJa)) errors.push(`${question.id}: Japanese explanation needs plain-language review`);
   if (!question.correct.length || question.correct.some((index: number) => index < 0 || index >= question.options.length)) errors.push(`${question.id}: invalid correct answer`);
   if (!/^Syllabus 3\.3\.0 · /.test(question.source)) errors.push(`${question.id}: missing pinned syllabus reference`);
 }
