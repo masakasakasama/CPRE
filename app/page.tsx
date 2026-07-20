@@ -9,7 +9,8 @@ type SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";
 
 const STORAGE_KEY = "cpre-english-study:v1";
 const EXAM_KEY = "cpre-english-study:exam:v1";
-const APP_VERSION = "0.1.0";
+const INTRO_KEY = "cpre-english-study:intro:v1";
+const APP_VERSION = "0.2.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -80,6 +81,7 @@ function ChoiceList({ question, selected, onChange, disabled = false }: { questi
 
 export default function Home() {
   const [view, setView] = useState<View>("home");
+  const [showIntro, setShowIntro] = useState(() => typeof window === "undefined" || localStorage.getItem(INTRO_KEY) !== "done");
   const [progress, setProgress] = useState<Progress>(initialProgress);
   const [hydrated, setHydrated] = useState(false);
   const [practiceIndex, setPracticeIndex] = useState(0);
@@ -352,6 +354,40 @@ export default function Home() {
 
   const syncLabel = syncStatus === "synced" ? "Synced to GitHub" : syncStatus === "saving" ? "Saving to GitHub…" : syncStatus === "loading" ? "Loading GitHub data…" : syncStatus === "setup" ? "GitHub sync needs setup" : "Offline · cached locally";
 
+  function finishIntro(target: View) {
+    localStorage.setItem(INTRO_KEY, "done");
+    setView(target);
+    setShowIntro(false);
+  }
+
+  function renderIntro() {
+    const courseGroups = [
+      { range: "EU 1–2", title: "まず、要求工学の土台", description: "要求とは何か、なぜ必要か、9つの基本原則を押さえます。", keywords: "requirement · stakeholder · validation" },
+      { range: "EU 3–5", title: "次に、実務での進め方", description: "文書・モデル・プロトタイプで表し、要求を引き出して合意し、プロセスを組み立てます。", keywords: "work product · elicitation · RE process" },
+      { range: "EU 6–7", title: "最後に、管理とツール", description: "トレース、変更、優先順位、ツール導入までを整理します。", keywords: "traceability · change request · RE tool" },
+    ];
+    return (
+      <main className="intro-shell" lang="ja">
+        <div className="intro-top"><span className="intro-brand">CPRE <b>English Study</b></span><button onClick={() => finishIntro("home")}>案内をスキップ</button></div>
+        <section className="intro-hero">
+          <span className="eyebrow">IREB CPRE FOUNDATION LEVEL</span>
+          <h1>英語試験の前に、<br />まず全体像だけつかもう。</h1>
+          <p>このコースは、要求工学を7つの単元で学びます。問題と重要用語は英語、答え合わせ後の補足は日本語です。</p>
+          <div className="intro-actions"><button className="button primary" onClick={() => finishIntro("practice")}>まず1問やってみる</button><button className="button secondary" onClick={() => finishIntro("learn")}>7単元を詳しく見る</button></div>
+          <small>45問の模擬試験はあとでOK。最初から75分をやる必要はありません。</small>
+        </section>
+        <section className="intro-route" aria-labelledby="course-outline">
+          <div className="intro-section-head"><span>学ぶ順番</span><h2 id="course-outline">コースの概略</h2></div>
+          <div className="intro-course-grid">{courseGroups.map((group, index) => <article className="intro-course-card" key={group.range}><div><em>{index + 1}</em><span>{group.range}</span></div><h3>{group.title}</h3><p>{group.description}</p><small>{group.keywords}</small></article>)}</div>
+        </section>
+        <section className="intro-promise">
+          <div><strong>今日のゴール</strong><span>英語の問題を1問だけ解く</span></div>
+          <button className="button primary" onClick={() => finishIntro("practice")}>学習を始める →</button>
+        </section>
+      </main>
+    );
+  }
+
   function renderHome() {
     const latest = progress.mockHistory[0];
     return (
@@ -492,6 +528,7 @@ export default function Home() {
   }
 
   if (!hydrated) return <main className="loading"><span>CPRE</span><div /></main>;
+  if (showIntro) return renderIntro();
 
   return (
     <div className="app-shell">
