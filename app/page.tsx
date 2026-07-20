@@ -400,6 +400,7 @@ export default function Home() {
             <div className="hero-actions">
               <button className="button primary" onClick={() => { setView("practice"); setPracticeChecked(false); }}>Continue practice</button>
               <button className="button secondary" onClick={startExam}>Start 75-min exam</button>
+              <button className="button secondary" lang="ja" onClick={() => setShowIntro(true)}>コース概要を見る</button>
             </div>
           </div>
           <div className="score-orbit" aria-label={`${mastery}% practice accuracy`}>
@@ -535,7 +536,7 @@ export default function Home() {
       <aside className="sidebar">
         <button className="brand" onClick={() => setView("home")}><span>CR</span><div><strong>CPRE</strong><small>English Study</small></div></button>
         <nav aria-label="Primary navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.id === "home" ? "⌂" : item.id === "learn" ? "≡" : item.id === "practice" ? "◇" : item.id === "exam" ? "◷" : "↺"}</i><span>{item.label}</span>{item.id === "review" && progress.review.length > 0 && <em>{progress.review.length}</em>}</button>)}</nav>
-        <div className="sidebar-foot"><button onClick={() => setView("sources")}>About & sources</button><button onClick={() => void connectSync()}>{syncLabel}</button><small>v{APP_VERSION} · GitHub + offline cache</small></div>
+        <div className="sidebar-foot"><button lang="ja" onClick={() => setShowIntro(true)}>コース概要を見る</button><button onClick={() => setView("sources")}>About & sources</button><button onClick={() => void connectSync()}>{syncLabel}</button><small>v{APP_VERSION} · GitHub + offline cache</small></div>
       </aside>
       <main className="main-content">{view === "home" && renderHome()}{view === "learn" && renderLearn()}{view === "practice" && renderPractice()}{view === "exam" && renderExam()}{view === "review" && renderReview()}{view === "sources" && renderSources()}<footer><span>Unofficial CPRE Foundation Level study tool.</span><button onClick={() => setView("sources")}>Sources & copyright</button></footer></main>
       <nav className="bottom-nav" aria-label="Mobile navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.id === "home" ? "⌂" : item.id === "learn" ? "≡" : item.id === "practice" ? "◇" : item.id === "exam" ? "◷" : "↺"}</i><span>{item.short}</span></button>)}</nav>
