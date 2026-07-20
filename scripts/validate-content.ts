@@ -5,12 +5,18 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const { questions, sources } = await import(new URL("../app/data.ts", import.meta.url).href);
+const { studyGuides } = await import(new URL("../app/study.ts", import.meta.url).href);
 const manifest = JSON.parse(await readFile(join(root, "sources", "manifest.json"), "utf8"));
 const errors: string[] = [];
 const japanese = /[\u3040-\u30ff\u3400-\u9fff]/;
 const unnaturalJapanese = /解決空間|要求源|作業構造|下流成果物|無批判/;
 
 if (questions.length !== 45) errors.push(`Expected 45 questions, found ${questions.length}`);
+if (studyGuides.length !== 7 || new Set(studyGuides.map((guide: { unit: number }) => guide.unit)).size !== 7) errors.push("Expected one study guide for each of the seven units");
+for (const guide of studyGuides) {
+  if (guide.diagram.length < 3 || guide.points.length < 3 || guide.terms.length < 4) errors.push(`EU ${guide.unit}: study guide is incomplete`);
+  if (!/Syllabus 3\.3\.0/.test(guide.source) || !/Handbook 1\.3\.1/.test(guide.source)) errors.push(`EU ${guide.unit}: study guide source is not pinned`);
+}
 if (new Set(questions.map((question: { id: string }) => question.id)).size !== questions.length) errors.push("Question IDs must be unique");
 for (const question of questions) {
   if (japanese.test(question.prompt) || question.options.some((option: string) => japanese.test(option))) errors.push(`${question.id}: Japanese text found in an exam field`);

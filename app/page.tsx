@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { questions, sources, units, type Question } from "./data";
 import { initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, type ActiveExam, type MockResult, type Progress } from "./progress";
+import { studyGuides } from "./study";
 
 type View = "home" | "learn" | "practice" | "exam" | "review" | "sources";
 type SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";
@@ -14,8 +15,8 @@ const APP_VERSION = "0.2.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
-  { id: "learn", label: "Learn", short: "Learn" },
-  { id: "practice", label: "Practice", short: "Practice" },
+  { id: "learn", label: "Study guides", short: "Study" },
+  { id: "practice", label: "Quick test", short: "Test" },
   { id: "exam", label: "Mock exam", short: "Exam" },
   { id: "review", label: "Review", short: "Review" },
 ];
@@ -82,6 +83,7 @@ function ChoiceList({ question, selected, onChange, disabled = false }: { questi
 export default function Home() {
   const [view, setView] = useState<View>("home");
   const [showIntro, setShowIntro] = useState(() => typeof window === "undefined" || localStorage.getItem(INTRO_KEY) !== "done");
+  const [selectedStudyUnit, setSelectedStudyUnit] = useState<number | null>(null);
   const [progress, setProgress] = useState<Progress>(initialProgress);
   const [hydrated, setHydrated] = useState(false);
   const [practiceIndex, setPracticeIndex] = useState(0);
@@ -360,6 +362,20 @@ export default function Home() {
     setShowIntro(false);
   }
 
+  function openStudy(unitId: number) {
+    setSelectedStudyUnit(unitId);
+    setView("learn");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function startUnitPractice(unitId: number) {
+    setPracticeUnit(unitId);
+    setPracticeIndex(0);
+    setPracticeSelected([]);
+    setPracticeChecked(false);
+    setView("practice");
+  }
+
   function renderIntro() {
     const courseGroups = [
       { range: "EU 1–2", title: "まず、要求工学の土台", description: "要求とは何か、なぜ必要か、9つの基本原則を押さえます。", keywords: "requirement · stakeholder · validation" },
@@ -411,6 +427,11 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="mode-grid" lang="ja" aria-label="学習方法を選ぶ">
+          <article className="mode-card study-mode panel"><span>01 · STUDY</span><h2>勉強する</h2><p>7単元の日本語ドキュメントを、図解と英語キーワードで読みます。</p><button className="button primary" onClick={() => { setSelectedStudyUnit(null); setView("learn"); }}>学習ドキュメントを開く →</button></article>
+          <article className="mode-card test-mode panel"><span>02 · TEST</span><h2>テストする</h2><p>1問ずつの練習か、45問・75分の模擬試験で理解度を確認します。</p><div><button className="button primary" onClick={() => setView("practice")}>1問ずつ練習</button><button className="button secondary" onClick={() => setView("exam")}>45問の模擬試験</button></div></article>
+        </section>
+
         <section className="metric-grid" aria-label="Study metrics">
           <article className="metric panel"><span>Units complete</span><strong>{progress.completedUnits.length}<small>/ 7</small></strong><div className="mini-bar"><i style={{ width: `${progress.completedUnits.length / 7 * 100}%` }} /></div></article>
           <article className="metric panel"><span>Review queue</span><strong>{progress.review.length}<small> items</small></strong><button className="text-button" onClick={() => setView("review")}>Review now →</button></article>
@@ -421,7 +442,7 @@ export default function Home() {
         <section className="section-head"><div><span className="eyebrow">SYLLABUS MAP</span><h2>Seven educational units</h2></div><button className="text-button" onClick={() => setView("learn")}>View all units →</button></section>
         <div className="unit-strip">
           {units.map((unit) => (
-            <button key={unit.id} className="unit-mini panel" onClick={() => setView("learn")}>
+            <button key={unit.id} className="unit-mini panel" onClick={() => openStudy(unit.id)}>
               <span>EU {unit.id}</span><strong>{unit.title}</strong><em>{unit.level} · {unit.duration}</em>
             </button>
           ))}
@@ -436,9 +457,29 @@ export default function Home() {
   }
 
   function renderLearn() {
+    const guide = selectedStudyUnit ? studyGuides.find((item) => item.unit === selectedStudyUnit) : null;
+    if (guide) {
+      const unit = units.find((item) => item.id === guide.unit)!;
+      const complete = progress.completedUnits.includes(guide.unit);
+      return (
+        <article className="study-document" lang="ja">
+          <button className="study-back" onClick={() => setSelectedStudyUnit(null)}>← 7単元の一覧へ</button>
+          <header className="study-doc-head"><div><span className="eyebrow">STUDY DOCUMENT · EU {guide.unit}</span><h1>{guide.titleJa}</h1><p className="study-en-title" lang="en">{unit.title}</p><p>{guide.lead}</p></div><div className="study-time"><strong>{unit.duration}</strong><span>公式シラバスの学習時間</span></div></header>
+
+          <section className="study-section"><div className="study-section-title"><span>01</span><div><small>VISUAL MAP</small><h2>{guide.diagramTitle}</h2></div></div><div className={`concept-flow count-${guide.diagram.length}`}>{guide.diagram.map((node, index) => <div className="concept-step" key={node.title}><div className="concept-index">{index + 1}</div><small>{node.label}</small><strong>{node.title}</strong><p>{node.note}</p>{index < guide.diagram.length - 1 && <i aria-hidden="true">→</i>}</div>)}</div></section>
+
+          <section className="study-section"><div className="study-section-title"><span>02</span><div><small>EXAM FOCUS</small><h2>試験で押さえるポイント</h2></div></div><div className="study-points">{guide.points.map((point, index) => <div key={point}><b>{String(index + 1).padStart(2, "0")}</b><p>{point}</p></div>)}</div></section>
+
+          <section className="study-section"><div className="study-section-title"><span>03</span><div><small>ENGLISH KEYWORDS</small><h2>英語で覚える重要用語</h2></div></div><div className="term-table">{guide.terms.map((term) => <div className="term-row" key={term.en}><strong lang="en">{term.en}</strong><span>{term.ja}</span><p>{term.note}</p></div>)}</div></section>
+
+          <footer className="study-doc-actions"><div><small>SOURCE</small><p>{guide.source}</p><p>公式文の転載ではなく、学習目標に基づく独自要約です。</p></div><div><button className={`button ${complete ? "complete" : "secondary"}`} onClick={() => setProgress((current) => ({ ...current, completedUnits: complete ? current.completedUnits.filter((id) => id !== guide.unit) : [...current.completedUnits, guide.unit] }))}>{complete ? "読了済み ✓" : "この単元を読了にする"}</button><button className="button primary" onClick={() => startUnitPractice(guide.unit)}>この単元の問題を解く →</button></div></footer>
+        </article>
+      );
+    }
     return (
       <>
-        <header className="page-head"><span className="eyebrow">LEARN</span><h1>Master the syllabus structure.</h1><p>English exam terms first. Japanese explanations are supporting notes, not translations of official text.</p></header>
+        <header className="page-head study-index-head" lang="ja"><span className="eyebrow">STUDY DOCUMENTS</span><h1>まず読んで理解する。</h1><p>単元を押すと、日本語の要点、関係が分かる図解、英語の試験用語が開きます。理解したら、その単元の小テストへ進めます。</p></header>
+        <section className="study-how" lang="ja"><strong>使い方</strong><span>単元を開く</span><i>→</i><span>図解と要点を読む</span><i>→</i><span>その単元の問題を解く</span></section>
         <div className="learning-grid">
           {units.map((unit) => {
             const complete = progress.completedUnits.includes(unit.id);
@@ -452,7 +493,7 @@ export default function Home() {
                   <h2>{unit.title}</h2>
                   <p className="jp-note" lang="ja">{unit.summaryJa}</p>
                   <div className="chips">{unit.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>
-                  <div className="unit-footer"><small>{unit.source} · {attempted}/{unitQuestions.length} questions attempted</small><button className={`button compact ${complete ? "complete" : "secondary"}`} onClick={() => setProgress((current) => ({ ...current, completedUnits: complete ? current.completedUnits.filter((id) => id !== unit.id) : [...current.completedUnits, unit.id] }))}>{complete ? "Completed" : "Mark complete"}</button></div>
+                  <div className="unit-footer"><small>{unit.source} · {attempted}/{unitQuestions.length} questions attempted {complete ? "· 読了済み" : ""}</small><button className="button compact primary" onClick={() => openStudy(unit.id)}>学習ドキュメントを開く →</button></div>
                 </div>
               </article>
             );
