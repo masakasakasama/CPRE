@@ -36,7 +36,9 @@ test("contains a full practice bank and no starter dependency", async () => {
   assert.match(page, /questions\.length/);
   assert.match(page, /75 \* 60 \* 1000/);
   assert.match(page, /前回の続き/);
-  assert.match(page, /const APP_VERSION = "0\.8\.0"/);
+  assert.match(page, /const APP_VERSION = "0\.9\.0"/);
+  assert.match(page, /選ぶと次の問題へ進む/);
+  assert.match(page, /不正解として記録済み · 1日後にもう一度出す/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.doesNotMatch(page, /_sites-preview|SkeletonPreview/);
 });

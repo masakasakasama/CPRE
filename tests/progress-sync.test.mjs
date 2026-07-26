@@ -131,6 +131,15 @@ test("weights first correct review by three confidence levels", () => {
   assert.equal(calculateNextReview(undefined, true, "high", at).intervalDays, 5);
 });
 
+test("records every incorrect answer for the next day without confidence", () => {
+  const at = "2026-07-26T00:00:00.000Z";
+  const record = upsertAnswerAttempt(undefined, [1], false, undefined, at);
+  assert.equal(record.attempts[0].intervalDays, 1);
+  assert.equal(record.attempts[0].dueAt, "2026-07-27T00:00:00.000Z");
+  assert.equal("confidence" in record.attempts[0], false);
+  assert.equal(calculateNextReview(record, false, "high").intervalDays, 1);
+});
+
 test("uses Anki-inspired multipliers for repeated correct answers", () => {
   const record = {
     selected: [0],
