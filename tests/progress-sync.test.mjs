@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateNextReview, calculateReadiness, calculateSchedule, getAnswerStats, initialProgress, makeSyncDocument, parseSyncDocument, selectNextQuestionId } from "../app/progress.ts";
+import { calculateNextReview, calculateReadiness, calculateSchedule, getAnswerStats, initialProgress, makeSyncDocument, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt } from "../app/progress.ts";
 
 test("accepts a complete GitHub progress document", () => {
   const document = makeSyncDocument({
@@ -113,4 +113,13 @@ test("keeps recently scheduled questions out and exposes their due date", () => 
   assert.equal(getAnswerStats(progress.answered.q1, new Date("2026-07-26T12:00:00.000Z")).due, false);
   assert.equal(selectNextQuestionId(["q1", "q2"], null, progress, new Date("2026-07-26T12:00:00.000Z")), "q2");
   assert.equal(selectNextQuestionId(["q1"], null, progress, new Date("2026-07-26T12:00:00.000Z")), null);
+});
+
+test("changes confidence on the current answer without adding another history entry", () => {
+  const at = "2026-07-26T00:00:00.000Z";
+  const firstChoice = upsertAnswerAttempt(undefined, [0], true, "low", at);
+  const changedChoice = upsertAnswerAttempt(firstChoice, [0], true, "high", at, at);
+  assert.equal(changedChoice.attempts.length, 1);
+  assert.equal(changedChoice.attempts[0].confidence, "high");
+  assert.equal(changedChoice.attempts[0].intervalDays, 5);
 });
