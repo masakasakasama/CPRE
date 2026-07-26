@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { questions, sources, units, type Question } from "./data";
 import { selectMockExamQuestions } from "./exam";
-import { calculateNextReview, calculateReadiness, calculateSchedule, getAnswerStats, initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt, type ActiveExam, type Confidence, type MockResult, type Progress } from "./progress";
+import { calculateNextReview, calculateReadiness, calculateSchedule, getAnswerStats, getLastLearningActivity, initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt, type ActiveExam, type Confidence, type LastLearningActivity, type MockResult, type Progress } from "./progress";
 import { studyGuides } from "./study";
 
 type View = "home" | "learn" | "practice" | "exam" | "review" | "sources";
@@ -12,7 +12,7 @@ type SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";
 const STORAGE_KEY = "cpre-english-study:v1";
 const EXAM_KEY = "cpre-english-study:exam:v1";
 const INTRO_KEY = "cpre-english-study:intro:v1";
-const APP_VERSION = "0.7.0";
+const APP_VERSION = "0.8.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -47,6 +47,10 @@ function formatChecked(value?: string) {
 
 function formatAttemptDate(value: string) {
   return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function formatResumeDate(value: string) {
+  return new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
 function questionScore(question: Question, selected: number[]) {
@@ -253,6 +257,13 @@ export default function Home() {
   const currentExamQuestion = exam ? examQuestions[exam.index] : null;
   const secondsLeft = exam ? Math.max(0, Math.ceil((exam.endsAt - now) / 1000)) : 75 * 60;
 
+  function rememberActivity(activity: Omit<LastLearningActivity, "at">) {
+    setProgress((current) => ({
+      ...current,
+      lastActivity: { ...activity, at: new Date().toISOString() },
+    }));
+  }
+
   function recordAnswer(question: Question, selected: number[], confidence: Confidence, replaceAttemptAt: string | null = null) {
     const correct = sameAnswer(selected, question.correct);
     const at = replaceAttemptAt || new Date().toISOString();
@@ -265,27 +276,32 @@ export default function Home() {
           [question.id]: upsertAnswerAttempt(existing, selected, correct, confidence, at, replaceAttemptAt),
         },
         review: correct ? current.review : Array.from(new Set([...current.review, question.id])),
+        lastActivity: { type: "practice", at: new Date().toISOString(), unit: practiceUnit, questionId: question.id },
       };
     });
     return at;
   }
 
   function nextPractice() {
-    setPracticeQuestionId(selectNextQuestionId(practicePool.map((question) => question.id), practiceQuestion?.id ?? null, progress) ?? "");
+    const nextId = selectNextQuestionId(practicePool.map((question) => question.id), practiceQuestion?.id ?? null, progress) ?? "";
+    setPracticeQuestionId(nextId);
     setPracticeSelected([]);
     setPracticeChecked(false);
     setPracticeConfidence(null);
     setPracticeAttemptAt(null);
+    if (nextId) rememberActivity({ type: "practice", unit: practiceUnit, questionId: nextId });
   }
 
   function beginPractice(unit: number | "all" = practiceUnit) {
     const pool = unit === "all" ? questions : questions.filter((question) => question.unit === unit);
+    const nextId = selectNextQuestionId(pool.map((question) => question.id), null, progress) ?? "";
     setPracticeUnit(unit);
-    setPracticeQuestionId(selectNextQuestionId(pool.map((question) => question.id), null, progress) ?? "");
+    setPracticeQuestionId(nextId);
     setPracticeSelected([]);
     setPracticeChecked(false);
     setPracticeConfidence(null);
     setPracticeAttemptAt(null);
+    if (nextId) rememberActivity({ type: "practice", unit, questionId: nextId });
     setView("practice");
   }
 
@@ -407,8 +423,37 @@ export default function Home() {
 
   function openStudy(unitId: number) {
     setSelectedStudyUnit(unitId);
+    rememberActivity({ type: "study", unit: unitId });
     setView("learn");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function resumeLearning() {
+    if (exam && exam.endsAt > Date.now()) {
+      setView("exam");
+      return;
+    }
+    const activity = getLastLearningActivity(progress);
+    if (!activity) return;
+    if (activity.type === "study" && typeof activity.unit === "number") {
+      openStudy(activity.unit);
+      return;
+    }
+    const unit = activity.unit ?? "all";
+    const pool = unit === "all" ? questions : questions.filter((question) => question.unit === unit);
+    const ids = pool.map((question) => question.id);
+    const previousId = activity.questionId && ids.includes(activity.questionId) ? activity.questionId : null;
+    const nextId = previousId && !progress.answered[previousId]
+      ? previousId
+      : selectNextQuestionId(ids, previousId, progress);
+    setPracticeUnit(unit);
+    setPracticeQuestionId(nextId ?? "");
+    setPracticeSelected([]);
+    setPracticeChecked(false);
+    setPracticeConfidence(null);
+    setPracticeAttemptAt(null);
+    if (nextId) rememberActivity({ type: "practice", unit, questionId: nextId });
+    setView("practice");
   }
 
   function startUnitPractice(unitId: number) {
@@ -445,6 +490,21 @@ export default function Home() {
 
   function renderHome() {
     const latest = progress.mockHistory[0];
+    const lastActivity = getLastLearningActivity(progress);
+    const activeResumeExam = exam && exam.endsAt > Date.now() ? exam : null;
+    const activityUnit = lastActivity?.unit ?? "all";
+    const activityPool = activityUnit === "all" ? questions : questions.filter((question) => question.unit === activityUnit);
+    const activityIds = activityPool.map((question) => question.id);
+    const previousActivityId = lastActivity?.questionId && activityIds.includes(lastActivity.questionId) ? lastActivity.questionId : null;
+    const resumeQuestionId = lastActivity?.type === "practice"
+      ? previousActivityId && !progress.answered[previousActivityId]
+        ? previousActivityId
+        : selectNextQuestionId(activityIds, previousActivityId, progress)
+      : null;
+    const resumeQuestion = questions.find((question) => question.id === resumeQuestionId);
+    const resumeGuide = lastActivity?.type === "study" && typeof lastActivity.unit === "number"
+      ? studyGuides.find((guide) => guide.unit === lastActivity.unit)
+      : null;
     const readinessLabel = readiness.total >= 85 ? "仕上げ段階" : readiness.total >= 70 ? "合格圏へ接近" : readiness.total >= 50 ? "知識を接続中" : readiness.total >= 30 ? "基礎を形成中" : "導入段階";
     const scheduleLabel = schedule?.status === "ahead" ? "予定より先行" : schedule?.status === "on-track" ? "ほぼ予定どおり" : schedule?.status === "behind" ? "予定より遅れ" : "受験予定日";
     const scheduleMessage = schedule
@@ -476,6 +536,26 @@ export default function Home() {
             <p lang="ja">{readinessLabel}</p>
           </div>
         </section>
+
+        {(activeResumeExam || lastActivity) && (
+          <section className="resume-panel panel" lang="ja" aria-labelledby="resume-title">
+            <div className="resume-icon" aria-hidden="true">▶</div>
+            <div className="resume-copy">
+              <span>CONTINUE LEARNING</span>
+              <h2 id="resume-title">前回の続き</h2>
+              {activeResumeExam ? (
+                <><p>45問の模擬試験</p><small>{activeResumeExam.index + 1}問目から · 残り {formatTimer(secondsLeft)}</small></>
+              ) : resumeGuide ? (
+                <><p>EU {resumeGuide.unit} · {resumeGuide.titleJa}</p><small>学習ドキュメント · 前回 {formatResumeDate(lastActivity!.at)}</small></>
+              ) : (
+                <><p>{resumeQuestion ? `${resumeQuestion.id} · ${resumeQuestion.keyword}` : "次の復習日まで待機中"}</p><small>{activityUnit === "all" ? "全単元の練習" : `EU ${activityUnit} の練習`} · 前回 {formatResumeDate(lastActivity!.at)}</small></>
+              )}
+            </div>
+            <button className="button primary resume-button" onClick={resumeLearning}>
+              {activeResumeExam ? "模試を再開 →" : resumeGuide ? "この単元を再開 →" : "練習を再開 →"}
+            </button>
+          </section>
+        )}
 
         <section className="mode-grid" lang="ja" aria-label="学習方法を選ぶ">
           <article className="mode-card study-mode panel"><span>01 · STUDY</span><h2>勉強する</h2><p>7単元の日本語ドキュメント、図解、英語キーワード</p><button className="button primary" onClick={() => { setSelectedStudyUnit(null); setView("learn"); }}>学習ドキュメントを開く →</button></article>
@@ -578,12 +658,14 @@ export default function Home() {
   function renderPractice() {
     const changePracticeUnit = (unit: number | "all") => {
       const pool = unit === "all" ? questions : questions.filter((question) => question.unit === unit);
+      const nextId = selectNextQuestionId(pool.map((question) => question.id), null, progress) ?? "";
       setPracticeUnit(unit);
-      setPracticeQuestionId(selectNextQuestionId(pool.map((question) => question.id), null, progress) ?? "");
+      setPracticeQuestionId(nextId);
       setPracticeSelected([]);
       setPracticeChecked(false);
       setPracticeConfidence(null);
       setPracticeAttemptAt(null);
+      if (nextId) rememberActivity({ type: "practice", unit, questionId: nextId });
     };
     if (!practiceQuestion) {
       const nextDates = practicePool
