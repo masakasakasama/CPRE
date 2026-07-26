@@ -103,6 +103,15 @@ h1 { letter-spacing: -.045em; }
 .score-ring span, .score-orbit p { color: var(--muted); font-size: 11px; }
 .score-orbit p { margin: 14px 0 0; }
 
+.resume-panel { margin: 14px 0; padding: 21px 24px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px; border-color: #40512f; background: radial-gradient(circle at 0 50%, rgba(199,243,107,.1), transparent 34%), linear-gradient(145deg, #151b13, #101318); }
+.resume-icon { width: 46px; height: 46px; border-radius: 50%; display: grid; place-content: center; color: #0c1008; background: var(--accent); font-size: 14px; padding-left: 2px; box-shadow: 0 0 28px rgba(199,243,107,.12); }
+.resume-copy { min-width: 0; }
+.resume-copy > span { color: var(--accent); font-size: 9px; font-weight: 850; letter-spacing: .14em; }
+.resume-copy h2 { margin: 5px 0 3px; font-size: 22px; }
+.resume-copy p { margin: 0; color: #e4e9ef; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+.resume-copy small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; }
+.resume-button { justify-self: end; min-width: 150px; }
+
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 14px 0 50px; }
 .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
 .mode-card { min-height: 230px; padding: 28px; display: flex; flex-direction: column; align-items: flex-start; }
@@ -397,6 +406,10 @@ footer button { border: 0; background: none; color: var(--muted); cursor: pointe
   .score-orbit { display: none; }
   .hero h1 { font-size: 39px; }
   .hero-actions .button { flex: 1 1 145px; }
+  .resume-panel { grid-template-columns: auto minmax(0, 1fr); padding: 19px 17px; gap: 14px; }
+  .resume-icon { width: 40px; height: 40px; }
+  .resume-copy h2 { font-size: 20px; }
+  .resume-button { grid-column: 1 / -1; width: 100%; justify-self: stretch; }
   .metric-grid { gap: 8px; margin-bottom: 40px; }
   .mode-grid { grid-template-columns: 1fr; }
   .mode-card { min-height: 215px; padding: 23px; }

@@ -9,6 +9,12 @@ export type AttemptRecord = {
 };
 export type AnswerRecord = { selected: number[]; correct: boolean; lastAt: string; attempts: AttemptRecord[] };
 export type MockResult = { at: string; percent: number; correct: number; points: number; total: number };
+export type LastLearningActivity = {
+  type: "study" | "practice";
+  at: string;
+  unit?: number | "all";
+  questionId?: string;
+};
 
 export type Progress = {
   schema: 1;
@@ -20,6 +26,7 @@ export type Progress = {
   lastSourceCheck?: string;
   targetExamDate?: string;
   planStartedAt?: string;
+  lastActivity?: LastLearningActivity;
 };
 
 export type ReadinessBreakdown = {
@@ -131,6 +138,20 @@ export function parseProgress(value: unknown): Progress | null {
     mockHistory.push({ at: raw.at, percent: Number(raw.percent), correct: Number(raw.correct), points: Number(raw.points), total: Number(raw.total) });
   }
 
+  let lastActivity: LastLearningActivity | undefined;
+  if (value.lastActivity !== undefined) {
+    if (!isRecord(value.lastActivity) || (value.lastActivity.type !== "study" && value.lastActivity.type !== "practice") || typeof value.lastActivity.at !== "string") return null;
+    const unit = value.lastActivity.unit;
+    if (unit !== undefined && unit !== "all" && (!Number.isInteger(unit) || Number(unit) < 1 || Number(unit) > 7)) return null;
+    if (value.lastActivity.questionId !== undefined && typeof value.lastActivity.questionId !== "string") return null;
+    lastActivity = {
+      type: value.lastActivity.type,
+      at: value.lastActivity.at,
+      ...(unit === "all" || Number.isInteger(unit) ? { unit: unit as number | "all" } : {}),
+      ...(typeof value.lastActivity.questionId === "string" ? { questionId: value.lastActivity.questionId } : {}),
+    };
+  }
+
   return {
     schema: 1,
     answered,
@@ -141,6 +162,21 @@ export function parseProgress(value: unknown): Progress | null {
     ...(typeof value.lastSourceCheck === "string" ? { lastSourceCheck: value.lastSourceCheck } : {}),
     ...(typeof value.targetExamDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.targetExamDate) ? { targetExamDate: value.targetExamDate } : {}),
     ...(typeof value.planStartedAt === "string" ? { planStartedAt: value.planStartedAt } : {}),
+    ...(lastActivity ? { lastActivity } : {}),
+  };
+}
+
+export function getLastLearningActivity(progress: Progress): LastLearningActivity | null {
+  if (progress.lastActivity) return progress.lastActivity;
+  const latestAnswer = Object.entries(progress.answered)
+    .filter(([, answer]) => Number.isFinite(new Date(answer.lastAt).getTime()))
+    .sort(([, left], [, right]) => new Date(right.lastAt).getTime() - new Date(left.lastAt).getTime())[0];
+  if (!latestAnswer) return null;
+  return {
+    type: "practice",
+    at: latestAnswer[1].lastAt,
+    unit: "all",
+    questionId: latestAnswer[0],
   };
 }
 

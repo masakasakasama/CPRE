@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { questions } from "../app/data.ts";
 import { MOCK_BLUEPRINT, selectMockExamQuestions } from "../app/exam.ts";
-import { calculateNextReview, calculateReadiness, calculateSchedule, getAnswerStats, initialProgress, makeSyncDocument, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt } from "../app/progress.ts";
+import { calculateNextReview, calculateReadiness, calculateSchedule, getAnswerStats, getLastLearningActivity, initialProgress, makeSyncDocument, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt } from "../app/progress.ts";
 
 test("accepts a complete GitHub progress document", () => {
   const document = makeSyncDocument({
     ...initialProgress,
     review: ["q-1"],
     completedUnits: [1],
+    lastActivity: { type: "study", unit: 1, at: "2026-07-26T10:00:00.000Z" },
   }, {
     order: ["q-1"],
     answers: { "q-1": [0] },
@@ -100,6 +101,27 @@ test("migrates the legacy last answer into the first history entry", () => {
   assert.deepEqual(parsed?.progress.answered.q1.attempts, [
     { selected: [0], correct: true, at: "2026-07-25T00:00:00.000Z" },
   ]);
+});
+
+test("restores a resume point from the latest legacy answer", () => {
+  const progress = {
+    ...initialProgress,
+    answered: {
+      q1: { selected: [0], correct: true, lastAt: "2026-07-25T00:00:00.000Z", attempts: [] },
+      q2: { selected: [1], correct: false, lastAt: "2026-07-26T00:00:00.000Z", attempts: [] },
+    },
+  };
+  assert.deepEqual(getLastLearningActivity(progress), {
+    type: "practice",
+    at: "2026-07-26T00:00:00.000Z",
+    unit: "all",
+    questionId: "q2",
+  });
+});
+
+test("prefers an explicitly stored study resume point", () => {
+  const lastActivity = { type: "study", unit: 4, at: "2026-07-26T09:30:00.000Z" };
+  assert.deepEqual(getLastLearningActivity({ ...initialProgress, lastActivity }), lastActivity);
 });
 
 test("weights first correct review by three confidence levels", () => {
