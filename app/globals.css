@@ -471,6 +471,13 @@ footer button { border: 0; background: none; color: var(--muted); cursor: pointe
   .exam-actions .button { padding: 0 12px; }
 }
 
+@media (max-width: 320px) {
+  .confidence-options { grid-template-columns: 1fr; }
+  .confidence-options button { min-height: 48px; grid-template-columns: 1fr auto; align-items: center; }
+  .confidence-options button small { display: block; grid-column: 1; }
+  .confidence-options button strong { grid-column: 2; grid-row: 1 / 3; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
