@@ -236,6 +236,32 @@ export function calculateNextReview(record: AnswerRecord | undefined, correct: b
   return { intervalDays, dueAt: due.toISOString(), factor, isFirstCorrect };
 }
 
+export function upsertAnswerAttempt(
+  record: AnswerRecord | undefined,
+  selected: number[],
+  correct: boolean,
+  confidence: Confidence,
+  at: string,
+  replaceAttemptAt: string | null = null,
+): AnswerRecord {
+  const previousAttempts = (record?.attempts ?? []).filter((attempt) => attempt.at !== replaceAttemptAt);
+  const scheduleBase = record ? { ...record, attempts: previousAttempts } : undefined;
+  const schedule = calculateNextReview(scheduleBase, correct, confidence, new Date(at));
+  return {
+    selected,
+    correct,
+    lastAt: at,
+    attempts: [...previousAttempts, {
+      selected,
+      correct,
+      at,
+      confidence,
+      intervalDays: schedule.intervalDays,
+      dueAt: schedule.dueAt,
+    }].slice(-50),
+  };
+}
+
 export function getAnswerStats(record?: AnswerRecord, now = new Date()): AnswerStats {
   if (!record) {
     return { attempts: 0, correctCount: 0, incorrectCount: 0, consecutiveCorrect: 0, lastCorrectAt: null, nextReviewAt: null, due: true };
