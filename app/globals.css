@@ -285,6 +285,7 @@ h1 { letter-spacing: -.045em; }
 .feedback > strong { font-size: 20px; }
 .feedback > p { color: #d5d9df; line-height: 1.75; font-size: 13px; margin: 12px 0; }
 .feedback-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 10px; margin: 12px 0 18px; }
+.feedback > p.incorrect-review-note { margin: 0 0 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.11); color: #ffb3b0; font-size: 11px; }
 .feedback > .button { display: block; margin-left: auto; }
 .prior { color: var(--muted); display: block; margin-top: 12px; }
 .confidence-prompt { border-top: 1px solid rgba(255,255,255,.11); padding-top: 18px; margin-top: 12px; }

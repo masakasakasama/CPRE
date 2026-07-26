@@ -256,19 +256,19 @@ export function calculateSchedule(progress: Progress, readiness: number, now = n
 
 const firstCorrectIntervals: Record<Confidence, number> = { low: 1, medium: 2, high: 5 };
 const correctFactors: Record<Confidence, number> = { low: 1.2, medium: 2.5, high: 3.25 };
-const incorrectFactors: Record<Confidence, number> = { low: 0.25, medium: 0.15, high: 0.05 };
 
-export function calculateNextReview(record: AnswerRecord | undefined, correct: boolean, confidence: Confidence, at = new Date()): ReviewSchedule {
+export function calculateNextReview(record: AnswerRecord | undefined, correct: boolean, confidence: Confidence | undefined, at = new Date()): ReviewSchedule {
   const attempts = record?.attempts ?? [];
   const previousInterval = attempts.at(-1)?.intervalDays ?? 0;
   const hasCorrectAttempt = attempts.some((attempt) => attempt.correct);
   const isFirstCorrect = correct && !hasCorrectAttempt;
-  const factor = correct ? correctFactors[confidence] : incorrectFactors[confidence];
+  const selectedConfidence = confidence ?? "medium";
+  const factor = correct ? correctFactors[selectedConfidence] : 0;
   const intervalDays = isFirstCorrect
-    ? firstCorrectIntervals[confidence]
+    ? firstCorrectIntervals[selectedConfidence]
     : correct
       ? Math.max(previousInterval + 1, Math.round(Math.max(1, previousInterval) * factor))
-      : Math.max(1, Math.round(Math.max(1, previousInterval) * factor));
+      : 1;
   const due = new Date(at);
   due.setTime(due.getTime() + intervalDays * 86_400_000);
   return { intervalDays, dueAt: due.toISOString(), factor, isFirstCorrect };
@@ -278,7 +278,7 @@ export function upsertAnswerAttempt(
   record: AnswerRecord | undefined,
   selected: number[],
   correct: boolean,
-  confidence: Confidence,
+  confidence: Confidence | undefined,
   at: string,
   replaceAttemptAt: string | null = null,
 ): AnswerRecord {
@@ -293,7 +293,7 @@ export function upsertAnswerAttempt(
       selected,
       correct,
       at,
-      confidence,
+      ...(confidence ? { confidence } : {}),
       intervalDays: schedule.intervalDays,
       dueAt: schedule.dueAt,
     }].slice(-50),

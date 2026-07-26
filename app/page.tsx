@@ -12,7 +12,7 @@ type SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";
 const STORAGE_KEY = "cpre-english-study:v1";
 const EXAM_KEY = "cpre-english-study:exam:v1";
 const INTRO_KEY = "cpre-english-study:intro:v1";
-const APP_VERSION = "0.8.0";
+const APP_VERSION = "0.9.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -96,8 +96,6 @@ export default function Home() {
   const [practiceQuestionId, setPracticeQuestionId] = useState(questions[0]?.id ?? "");
   const [practiceSelected, setPracticeSelected] = useState<number[]>([]);
   const [practiceChecked, setPracticeChecked] = useState(false);
-  const [practiceConfidence, setPracticeConfidence] = useState<Confidence | null>(null);
-  const [practiceAttemptAt, setPracticeAttemptAt] = useState<string | null>(null);
   const [practiceUnit, setPracticeUnit] = useState<number | "all">("all");
   const [exam, setExam] = useState<ActiveExam | null>(null);
   const [examResult, setExamResult] = useState<MockResult | null>(null);
@@ -264,7 +262,7 @@ export default function Home() {
     }));
   }
 
-  function recordAnswer(question: Question, selected: number[], confidence: Confidence, replaceAttemptAt: string | null = null) {
+  function recordAnswer(question: Question, selected: number[], confidence?: Confidence, replaceAttemptAt: string | null = null) {
     const correct = sameAnswer(selected, question.correct);
     const at = replaceAttemptAt || new Date().toISOString();
     setProgress((current) => {
@@ -282,13 +280,24 @@ export default function Home() {
     return at;
   }
 
+  function checkPracticeAnswer() {
+    if (!practiceQuestion) return;
+    const correct = sameAnswer(practiceSelected, practiceQuestion.correct);
+    setPracticeChecked(true);
+    if (!correct) recordAnswer(practiceQuestion, practiceSelected);
+  }
+
+  function recordCorrectAndContinue(confidence: Confidence) {
+    if (!practiceQuestion) return;
+    recordAnswer(practiceQuestion, practiceSelected, confidence);
+    nextPractice();
+  }
+
   function nextPractice() {
     const nextId = selectNextQuestionId(practicePool.map((question) => question.id), practiceQuestion?.id ?? null, progress) ?? "";
     setPracticeQuestionId(nextId);
     setPracticeSelected([]);
     setPracticeChecked(false);
-    setPracticeConfidence(null);
-    setPracticeAttemptAt(null);
     if (nextId) rememberActivity({ type: "practice", unit: practiceUnit, questionId: nextId });
   }
 
@@ -299,8 +308,6 @@ export default function Home() {
     setPracticeQuestionId(nextId);
     setPracticeSelected([]);
     setPracticeChecked(false);
-    setPracticeConfidence(null);
-    setPracticeAttemptAt(null);
     if (nextId) rememberActivity({ type: "practice", unit, questionId: nextId });
     setView("practice");
   }
@@ -450,8 +457,6 @@ export default function Home() {
     setPracticeQuestionId(nextId ?? "");
     setPracticeSelected([]);
     setPracticeChecked(false);
-    setPracticeConfidence(null);
-    setPracticeAttemptAt(null);
     if (nextId) rememberActivity({ type: "practice", unit, questionId: nextId });
     setView("practice");
   }
@@ -663,8 +668,6 @@ export default function Home() {
       setPracticeQuestionId(nextId);
       setPracticeSelected([]);
       setPracticeChecked(false);
-      setPracticeConfidence(null);
-      setPracticeAttemptAt(null);
       if (nextId) rememberActivity({ type: "practice", unit, questionId: nextId });
     };
     if (!practiceQuestion) {
@@ -683,9 +686,6 @@ export default function Home() {
     const stats = getAnswerStats(prior);
     const history = prior?.attempts?.slice(-10).reverse() ?? [];
     const answerCorrect = sameAnswer(practiceSelected, practiceQuestion.correct);
-    const scheduleRecord = prior && practiceAttemptAt
-      ? { ...prior, attempts: prior.attempts.filter((attempt) => attempt.at !== practiceAttemptAt) }
-      : prior;
     const confidenceOptions: { value: Confidence; label: string; note: string }[] = [
       { value: "low", label: "自信なし", note: "かなり迷った" },
       { value: "medium", label: "少し迷った", note: "考えて答えた" },
@@ -699,33 +699,39 @@ export default function Home() {
           <h2>{practiceQuestion.prompt}</h2>
           {practiceQuestion.kind === "multiple" && <p className="instruction">Select {practiceQuestion.correct.length} answers.</p>}
           <ChoiceList question={practiceQuestion} selected={practiceSelected} onChange={setPracticeSelected} disabled={practiceChecked} />
-          {!practiceChecked ? <button className="button primary full" disabled={!practiceSelected.length} onClick={() => setPracticeChecked(true)}>Check answer</button> : (
+          {!practiceChecked ? <button className="button primary full" disabled={!practiceSelected.length} onClick={checkPracticeAnswer}>Check answer</button> : (
             <div className={`feedback ${answerCorrect ? "correct" : "incorrect"}`}>
               <strong>{answerCorrect ? "Correct" : "Not quite"}</strong>
               <p lang="ja">{practiceQuestion.explanationJa}</p>
               <div className="feedback-meta"><span>Keyword: {practiceQuestion.keyword}</span><span>{practiceQuestion.source}</span></div>
-              <div className="confidence-prompt" lang="ja">
-                <strong>答えるときの自信は？</strong>
-                <p>正誤と自信から次回日を計算</p>
-                <div className="confidence-options">{confidenceOptions.map((option) => {
-                  const schedule = calculateNextReview(scheduleRecord, answerCorrect, option.value);
-                  return <button key={option.value} className={practiceConfidence === option.value ? "selected" : ""} aria-pressed={practiceConfidence === option.value} onClick={() => { const attemptAt = recordAnswer(practiceQuestion, practiceSelected, option.value, practiceAttemptAt); setPracticeAttemptAt(attemptAt); setPracticeConfidence(option.value); }}><span>{option.label}</span><small>{option.note}</small><strong>{schedule.intervalDays}日後</strong></button>;
-                })}</div>
-              </div>
-              <details className="schedule-formula" lang="ja">
-                <summary>次回日の計算式</summary>
-                <p><b>初回正解</b>：自信なし 1日／少し迷った 2日／自信あり 5日</p>
-                <p><b>2回目以降の正解</b>：max（前回間隔＋1日, 四捨五入［前回間隔 × 自信係数］）</p>
-                <p>自信係数：自信なし ×1.2／少し迷った ×2.5／自信あり ×3.25</p>
-                <p><b>不正解</b>：max（1日, 四捨五入［前回間隔 × 戻し係数］）</p>
-                <p>戻し係数：自信なし ×0.25／少し迷った ×0.15／自信あり ×0.05。自信を持った不正解は、誤った確信として強く間隔を短縮</p>
-                <p className="formula-example">例：少し迷って正解を続けた場合 2日 → 5日 → 13日 → 33日</p>
-              </details>
-              {practiceConfidence && <button className="button primary" onClick={nextPractice}>Next question →</button>}
+              {answerCorrect ? (
+                <>
+                  <div className="confidence-prompt" lang="ja">
+                    <strong>答えるときの自信は？</strong>
+                    <p>選ぶと次の問題へ進む</p>
+                    <div className="confidence-options">{confidenceOptions.map((option) => {
+                      const reviewSchedule = calculateNextReview(prior, true, option.value);
+                      return <button key={option.value} onClick={() => recordCorrectAndContinue(option.value)}><span>{option.label}</span><small>{option.note}</small><strong>{reviewSchedule.intervalDays}日後</strong></button>;
+                    })}</div>
+                  </div>
+                  <details className="schedule-formula" lang="ja">
+                    <summary>次回日の計算式</summary>
+                    <p><b>初回正解</b>：自信なし 1日／少し迷った 2日／自信あり 5日</p>
+                    <p><b>2回目以降の正解</b>：max（前回間隔＋1日, 四捨五入［前回間隔 × 自信係数］）</p>
+                    <p>自信係数：自信なし ×1.2／少し迷った ×2.5／自信あり ×3.25</p>
+                    <p className="formula-example">例：少し迷って正解を続けた場合 2日 → 5日 → 13日 → 33日</p>
+                  </details>
+                </>
+              ) : (
+                <>
+                  <p className="incorrect-review-note" lang="ja">不正解として記録済み · 1日後にもう一度出す</p>
+                  <button className="button primary" onClick={nextPractice}>Next question →</button>
+                </>
+              )}
             </div>
           )}
           <div className="attempt-summary" lang="ja">
-            {prior ? <><div className="attempt-stats"><span><small>解答</small><strong>{stats.attempts}回</strong></span><span><small>正解</small><strong>{stats.correctCount}回</strong></span><span><small>連続</small><strong>{stats.consecutiveCorrect}回</strong></span><span><small>次回</small><strong>{stats.due ? "今日" : stats.nextReviewAt ? formatAttemptDate(stats.nextReviewAt) : "未設定"}</strong></span></div>{history.length > 0 && <details><summary>解答履歴</summary><ol>{history.map((attempt, index) => <li key={`${attempt.at}-${index}`}><strong className={attempt.correct ? "history-correct" : "history-wrong"}>{attempt.correct ? "正解" : "不正解"}</strong><span>{attempt.confidence === "high" ? "自信あり" : attempt.confidence === "medium" ? "少し迷った" : attempt.confidence === "low" ? "自信なし" : "旧データ"}</span><time>{formatAttemptDate(attempt.at)}</time>{attempt.intervalDays && <em>→ {attempt.intervalDays}日後</em>}</li>)}</ol>{stats.attempts > history.length && <small>直近{history.length}件</small>}</details>}</> : <p>解答履歴なし</p>}
+            {prior ? <><div className="attempt-stats"><span><small>解答</small><strong>{stats.attempts}回</strong></span><span><small>正解</small><strong>{stats.correctCount}回</strong></span><span><small>連続</small><strong>{stats.consecutiveCorrect}回</strong></span><span><small>次回</small><strong>{stats.due ? "今日" : stats.nextReviewAt ? formatAttemptDate(stats.nextReviewAt) : "未設定"}</strong></span></div>{history.length > 0 && <details><summary>解答履歴</summary><ol>{history.map((attempt, index) => <li key={`${attempt.at}-${index}`}><strong className={attempt.correct ? "history-correct" : "history-wrong"}>{attempt.correct ? "正解" : "不正解"}</strong><span>{attempt.correct ? attempt.confidence === "high" ? "自信あり" : attempt.confidence === "medium" ? "少し迷った" : attempt.confidence === "low" ? "自信なし" : "旧データ" : ""}</span><time>{formatAttemptDate(attempt.at)}</time>{attempt.intervalDays && <em>→ {attempt.intervalDays}日後</em>}</li>)}</ol>{stats.attempts > history.length && <small>直近{history.length}件</small>}</details>}</> : <p>解答履歴なし</p>}
           </div>
         </section>
       </>
