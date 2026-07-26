@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { questions, sources, units, type Question } from "./data";
-import { initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, type ActiveExam, type MockResult, type Progress } from "./progress";
+import { calculateReadiness, calculateSchedule, initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, type ActiveExam, type MockResult, type Progress } from "./progress";
 import { studyGuides } from "./study";
 
 type View = "home" | "learn" | "practice" | "exam" | "review" | "sources";
@@ -11,7 +11,7 @@ type SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";
 const STORAGE_KEY = "cpre-english-study:v1";
 const EXAM_KEY = "cpre-english-study:exam:v1";
 const INTRO_KEY = "cpre-english-study:intro:v1";
-const APP_VERSION = "0.2.0";
+const APP_VERSION = "0.3.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -39,6 +39,13 @@ function formatTimer(totalSeconds: number) {
   const minutes = Math.floor(safe / 60);
   const seconds = safe % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function localDateInput(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatChecked(value?: string) {
@@ -242,9 +249,8 @@ export default function Home() {
 
   const practicePool = useMemo(() => practiceUnit === "all" ? questions : questions.filter((question) => question.unit === practiceUnit), [practiceUnit]);
   const practiceQuestion = practicePool[practiceIndex % practicePool.length] ?? questions[0];
-  const answeredCount = Object.keys(progress.answered).length;
-  const correctCount = Object.values(progress.answered).filter((item) => item.correct).length;
-  const mastery = answeredCount ? Math.round((correctCount / answeredCount) * 100) : 0;
+  const readiness = useMemo(() => calculateReadiness(progress), [progress]);
+  const schedule = useMemo(() => calculateSchedule(progress, readiness.total), [progress, readiness.total]);
   const examQuestions = exam ? exam.order.map((id) => questions.find((question) => question.id === id)!).filter(Boolean) : [];
   const currentExamQuestion = exam ? examQuestions[exam.index] : null;
   const secondsLeft = exam ? Math.max(0, Math.ceil((exam.endsAt - now) / 1000)) : 75 * 60;
@@ -327,6 +333,22 @@ export default function Home() {
     }
   }
 
+  function setTargetExamDate(value: string) {
+    setProgress((current) => {
+      if (!value) {
+        const next = { ...current };
+        delete next.targetExamDate;
+        delete next.planStartedAt;
+        return next;
+      }
+      return {
+        ...current,
+        targetExamDate: value,
+        planStartedAt: current.planStartedAt || new Date().toISOString(),
+      };
+    });
+  }
+
   async function connectSync() {
     if (syncKey) sessionStorage.setItem("cpre-english-study:sync-key", syncKey);
     if (githubToken) sessionStorage.setItem("cpre-english-study:github-token", githubToken);
@@ -406,6 +428,17 @@ export default function Home() {
 
   function renderHome() {
     const latest = progress.mockHistory[0];
+    const readinessLabel = readiness.total >= 85 ? "仕上げ段階" : readiness.total >= 70 ? "合格圏へ接近" : readiness.total >= 50 ? "知識を接続中" : readiness.total >= 30 ? "基礎を形成中" : "導入段階";
+    const scheduleLabel = schedule?.status === "ahead" ? "予定より先行" : schedule?.status === "on-track" ? "ほぼ予定どおり" : schedule?.status === "behind" ? "予定より遅れ" : "受験予定日";
+    const scheduleMessage = schedule
+      ? schedule.status === "ahead"
+        ? `${schedule.difference}ポイント先行しています。復習と模試へ進めます。`
+        : schedule.status === "behind"
+          ? `${Math.abs(schedule.difference)}ポイント遅れています。1日${schedule.questionsPerDay}問を目安に進めましょう。`
+          : schedule.status === "due"
+            ? readiness.total >= 70 ? "受験予定日です。直前は新しい範囲より復習を優先します。" : "受験予定日です。未復習問題と重要用語を優先します。"
+            : `現在の進み方を維持します。1日${schedule.questionsPerDay}問が目安です。`
+      : "";
     return (
       <>
         <section className="hero panel">
@@ -419,11 +452,11 @@ export default function Home() {
               <button className="button secondary" lang="ja" onClick={() => setShowIntro(true)}>コース概要を見る</button>
             </div>
           </div>
-          <div className="score-orbit" aria-label={`${mastery}% practice accuracy`}>
-            <div className="score-ring" style={{ "--score": `${mastery * 3.6}deg` } as React.CSSProperties}>
-              <div><strong>{mastery}%</strong><span>accuracy</span></div>
+          <div className="score-orbit" aria-label={`Knowledge estimate ${readiness.total}%`}>
+            <div className="score-ring" style={{ "--score": `${readiness.total * 3.6}deg` } as React.CSSProperties}>
+              <div><strong>{readiness.total}%</strong><span>定着度</span></div>
             </div>
-            <p>{answeredCount} of 45 questions attempted</p>
+            <p lang="ja">{readinessLabel}</p>
           </div>
         </section>
 
@@ -432,11 +465,33 @@ export default function Home() {
           <article className="mode-card test-mode panel"><span>02 · TEST</span><h2>テストする</h2><p>1問ずつの練習か、45問・75分の模擬試験で理解度を確認します。</p><div><button className="button primary" onClick={() => setView("practice")}>1問ずつ練習</button><button className="button secondary" onClick={() => setView("exam")}>45問の模擬試験</button></div></article>
         </section>
 
+        <section className="progress-board panel" lang="ja" aria-labelledby="progress-title">
+          <header className="progress-board-head">
+            <div><span className="eyebrow">LEARNING PROGRESS</span><h2 id="progress-title">いまの定着度と受験日までの進み具合</h2></div>
+            <label className="exam-date-field">受験予定日<input type="date" min={localDateInput()} value={progress.targetExamDate || ""} onChange={(event) => setTargetExamDate(event.target.value)} /></label>
+          </header>
+          <div className="progress-summary">
+            <div className="readiness-total"><div className="readiness-number"><strong>{readiness.total}</strong><span>/ 100</span></div><div><b>{readinessLabel}</b><p>「どのくらい頭に入っていそうか」の推定値です。合格を保証する数値ではありません。</p></div></div>
+            {schedule && progress.targetExamDate ? <div className={`schedule-summary ${schedule.status}`}><span>{scheduleLabel}</span><strong>あと {schedule.daysLeft} 日</strong><p>{new Intl.DateTimeFormat("ja-JP", { dateStyle: "long" }).format(new Date(`${progress.targetExamDate}T00:00:00`))}</p><small>{scheduleMessage}</small></div> : <div className="schedule-summary unset"><span>STUDY PLAN</span><strong>受験日を設定</strong><p>予定日を入れると、今日必要な進捗と1日あたりの問題数を計算します。</p></div>}
+          </div>
+          <div className="readiness-breakdown">
+            {[
+              ["問題の網羅", readiness.coverage, "25%"],
+              ["正答率", readiness.accuracy, "30%"],
+              ["教材の読了", readiness.study, "15%"],
+              ["復習の消化", readiness.review, "10%"],
+              ["最新模試", readiness.mock, "20%"],
+            ].map(([label, value, weight]) => <div className="readiness-factor" key={String(label)}><div><span>{label}</span><small>比重 {weight}</small><strong>{value}%</strong></div><div className="factor-bar"><i style={{ width: `${value}%` }} /></div></div>)}
+          </div>
+          {schedule && <div className="schedule-track"><div><span>今日までに必要な進捗</span><strong>{schedule.expectedByToday}%</strong></div><div className="schedule-rail"><i style={{ width: `${schedule.expectedByToday}%` }} /><b style={{ left: `${readiness.total}%` }} aria-label={`現在の定着度 ${readiness.total}%`} /></div><div className="schedule-legend"><span>計画</span><span>現在 {readiness.total}%</span></div></div>}
+          <details className="readiness-definition"><summary>定着度の計算方法</summary><p>問題の網羅率25%、正答率30%、学習ドキュメントの読了率15%、復習キューの消化率10%、最新模試スコア20%を合算しています。少数の問題だけ正解しても高くなりすぎず、学習・練習・復習・模試を一通り行うと上がる設計です。</p></details>
+        </section>
+
         <section className="metric-grid" aria-label="Study metrics">
           <article className="metric panel"><span>Units complete</span><strong>{progress.completedUnits.length}<small>/ 7</small></strong><div className="mini-bar"><i style={{ width: `${progress.completedUnits.length / 7 * 100}%` }} /></div></article>
           <article className="metric panel"><span>Review queue</span><strong>{progress.review.length}<small> items</small></strong><button className="text-button" onClick={() => setView("review")}>Review now →</button></article>
           <article className="metric panel"><span>Latest mock</span><strong>{latest ? `${latest.percent}%` : "—"}</strong><small>{latest ? `${latest.correct}/45 exact answers` : "No attempts yet"}</small></article>
-          <article className="metric panel"><span>Exam readiness</span><strong>{mastery >= 70 && answeredCount >= 30 ? "On track" : "Building"}</strong><small>Target reference: 70%</small></article>
+          <article className="metric panel"><span>Knowledge estimate</span><strong>{readiness.total}%</strong><small>{readinessLabel}</small></article>
         </section>
 
         <section className="section-head"><div><span className="eyebrow">SYLLABUS MAP</span><h2>Seven educational units</h2></div><button className="text-button" onClick={() => setView("learn")}>View all units →</button></section>

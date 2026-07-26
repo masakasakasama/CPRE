@@ -9,6 +9,25 @@ export type Progress = {
   bookmarks: string[];
   mockHistory: MockResult[];
   lastSourceCheck?: string;
+  targetExamDate?: string;
+  planStartedAt?: string;
+};
+
+export type ReadinessBreakdown = {
+  total: number;
+  coverage: number;
+  accuracy: number;
+  study: number;
+  review: number;
+  mock: number;
+};
+
+export type ScheduleProgress = {
+  daysLeft: number;
+  expectedByToday: number;
+  difference: number;
+  questionsPerDay: number;
+  status: "ahead" | "on-track" | "behind" | "due";
 };
 
 export type ActiveExam = {
@@ -70,6 +89,8 @@ export function parseProgress(value: unknown): Progress | null {
     bookmarks: value.bookmarks,
     mockHistory,
     ...(typeof value.lastSourceCheck === "string" ? { lastSourceCheck: value.lastSourceCheck } : {}),
+    ...(typeof value.targetExamDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.targetExamDate) ? { targetExamDate: value.targetExamDate } : {}),
+    ...(typeof value.planStartedAt === "string" ? { planStartedAt: value.planStartedAt } : {}),
   };
 }
 
@@ -94,4 +115,53 @@ export function parseSyncDocument(value: unknown): SyncDocument | null {
 
 export function makeSyncDocument(progress: Progress, activeExam: ActiveExam | null): SyncDocument {
   return { schema: 1, savedAt: new Date().toISOString(), progress, activeExam };
+}
+
+function clamp(value: number, min = 0, max = 100) {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function calculateReadiness(progress: Progress, totalQuestions = 45, totalUnits = 7): ReadinessBreakdown {
+  const answered = Object.values(progress.answered);
+  const correct = answered.filter((answer) => answer.correct).length;
+  const coverage = clamp(answered.length / totalQuestions * 100);
+  const accuracy = answered.length ? correct / answered.length * 100 : 0;
+  const study = clamp(progress.completedUnits.length / totalUnits * 100);
+  const review = answered.length ? clamp((answered.length - progress.review.length) / answered.length * 100) : 0;
+  const mock = clamp(progress.mockHistory[0]?.percent ?? 0);
+  const total = Math.round(coverage * 0.25 + accuracy * 0.30 + study * 0.15 + review * 0.10 + mock * 0.20);
+  return {
+    total,
+    coverage: Math.round(coverage),
+    accuracy: Math.round(accuracy),
+    study: Math.round(study),
+    review: Math.round(review),
+    mock: Math.round(mock),
+  };
+}
+
+function dayNumber(value: string | Date) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000);
+}
+
+export function calculateSchedule(progress: Progress, readiness: number, now = new Date(), totalQuestions = 45): ScheduleProgress | null {
+  if (!progress.targetExamDate) return null;
+  const today = dayNumber(now);
+  const target = dayNumber(`${progress.targetExamDate}T00:00:00`);
+  const start = dayNumber(progress.planStartedAt || now);
+  const daysLeft = Math.max(0, target - today);
+  const totalDays = Math.max(1, target - start);
+  const expectedByToday = clamp((today - start) / totalDays * 100);
+  const difference = Math.round(readiness - expectedByToday);
+  const remainingQuestions = Math.max(0, totalQuestions - Object.keys(progress.answered).length);
+  const questionsPerDay = remainingQuestions ? Math.ceil(remainingQuestions / Math.max(1, daysLeft)) : 0;
+  const status = daysLeft === 0
+    ? "due"
+    : difference >= 5
+      ? "ahead"
+      : difference <= -5
+        ? "behind"
+        : "on-track";
+  return { daysLeft, expectedByToday: Math.round(expectedByToday), difference, questionsPerDay, status };
 }
