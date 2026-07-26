@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { questions, sources, units, type Question } from "./data";
+import { selectMockExamQuestions } from "./exam";
 import { calculateNextReview, calculateReadiness, calculateSchedule, getAnswerStats, initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt, type ActiveExam, type Confidence, type MockResult, type Progress } from "./progress";
 import { studyGuides } from "./study";
 
@@ -11,7 +12,7 @@ type SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";
 const STORAGE_KEY = "cpre-english-study:v1";
 const EXAM_KEY = "cpre-english-study:exam:v1";
 const INTRO_KEY = "cpre-english-study:intro:v1";
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.7.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -23,15 +24,6 @@ const navItems: { id: View; label: string; short: string }[] = [
 
 function sameAnswer(a: number[], b: number[]) {
   return a.length === b.length && [...a].sort().every((value, index) => value === [...b].sort()[index]);
-}
-
-function shuffle<T>(items: T[]) {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
 }
 
 function formatTimer(totalSeconds: number) {
@@ -255,8 +247,8 @@ export default function Home() {
 
   const practicePool = useMemo(() => practiceUnit === "all" ? questions : questions.filter((question) => question.unit === practiceUnit), [practiceUnit]);
   const practiceQuestion = practicePool.find((question) => question.id === practiceQuestionId) ?? null;
-  const readiness = useMemo(() => calculateReadiness(progress), [progress]);
-  const schedule = useMemo(() => calculateSchedule(progress, readiness.total), [progress, readiness.total]);
+  const readiness = useMemo(() => calculateReadiness(progress, questions.length), [progress]);
+  const schedule = useMemo(() => calculateSchedule(progress, readiness.total, new Date(), questions.length), [progress, readiness.total]);
   const examQuestions = exam ? exam.order.map((id) => questions.find((question) => question.id === id)!).filter(Boolean) : [];
   const currentExamQuestion = exam ? examQuestions[exam.index] : null;
   const secondsLeft = exam ? Math.max(0, Math.ceil((exam.endsAt - now) / 1000)) : 75 * 60;
@@ -299,7 +291,7 @@ export default function Home() {
 
   function startExam() {
     const next: ActiveExam = {
-      order: shuffle(questions).map((question) => question.id),
+      order: selectMockExamQuestions(questions).map((question) => question.id),
       answers: {},
       index: 0,
       endsAt: Date.now() + 75 * 60 * 1000,
@@ -316,7 +308,9 @@ export default function Home() {
     let total = 0;
     const wrong: string[] = [];
     const nextAnswered = { ...progress.answered };
-    for (const question of questions) {
+    for (const id of target.order) {
+      const question = questions.find((candidate) => candidate.id === id);
+      if (!question) continue;
       const selected = target.answers[question.id] ?? [];
       const exact = sameAnswer(selected, question.correct);
       points += questionScore(question, selected);
@@ -468,7 +462,7 @@ export default function Home() {
           <div>
             <span className="eyebrow">ENGLISH EXAM PREP · SYLLABUS 3.3.0</span>
             <h1>Build precise RE judgment,<br />one objective at a time.</h1>
-            <p>45 original questions grounded in the official English syllabus. Explanations appear only after you answer.</p>
+            <p>{questions.length} original practice questions grounded in all 70 educational objectives. Each 45-question mock draws a fresh blueprint-based set.</p>
             <div className="hero-actions">
               <button className="button primary" onClick={() => beginPractice("all")}>Continue practice</button>
               <button className="button secondary" onClick={startExam}>Start 75-min exam</button>
@@ -500,14 +494,14 @@ export default function Home() {
           <div className="readiness-breakdown">
             {[
               ["問題の網羅", readiness.coverage, "25%"],
-              ["正答率", readiness.accuracy, "30%"],
+              ["正答済み", readiness.accuracy, "30%"],
               ["教材の読了", readiness.study, "15%"],
-              ["復習の消化", readiness.review, "10%"],
+              ["反復定着", readiness.review, "10%"],
               ["最新模試", readiness.mock, "20%"],
             ].map(([label, value, weight]) => <div className="readiness-factor" key={String(label)}><div><span>{label}</span><small>比重 {weight}</small><strong>{value}%</strong></div><div className="factor-bar"><i style={{ width: `${value}%` }} /></div></div>)}
           </div>
           {schedule && <div className="schedule-track"><div><span>今日までに必要な進捗</span><strong>{schedule.expectedByToday}%</strong></div><div className="schedule-rail"><i style={{ width: `${schedule.expectedByToday}%` }} /><b style={{ left: `${readiness.total}%` }} aria-label={`現在の定着度 ${readiness.total}%`} /></div><div className="schedule-legend"><span>計画</span><span>現在 {readiness.total}%</span></div></div>}
-          <details className="readiness-definition"><summary>定着度の計算方法</summary><p>問題の網羅率25%、正答率30%、学習ドキュメントの読了率15%、復習キューの消化率10%、最新模試スコア20%の合算。少数の問題だけで高くなりすぎず、学習・練習・復習・模試を進めるほど上がる設計</p></details>
+          <details className="readiness-definition"><summary>定着度の計算方法</summary><p>定着度 = 全{questions.length}問の網羅率×0.25 + 全問題中の正答済み率×0.30 + 教材読了率×0.15 + 2回以上連続正解した問題の割合×0.10 + 最新模試×0.20。少数問だけ正解率100%でも、未回答分は加点しない</p></details>
         </section>
 
         <section className="metric-grid" aria-label="Study metrics">

@@ -23,14 +23,17 @@ test("server-renders the CPRE study application shell", async () => {
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
 
-test("contains 45 original question records and no starter dependency", async () => {
-  const [data, page, packageJson] = await Promise.all([
+test("contains a full practice bank and no starter dependency", async () => {
+  const [data, additional, page, packageJson] = await Promise.all([
     readFile(new URL("../app/data.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/additional-questions.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
   const ids = data.match(/id: "Q\d{3}"/g) ?? [];
   assert.equal(ids.length, 45);
+  assert.match(additional, /EO 7\.2\.1/);
+  assert.match(page, /questions\.length/);
   assert.match(page, /75 \* 60 \* 1000/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.doesNotMatch(page, /_sites-preview|SkeletonPreview/);
