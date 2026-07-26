@@ -8,11 +8,16 @@ import { studyGuides } from "./study";
 
 type View = "home" | "learn" | "practice" | "exam" | "review" | "sources";
 type SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";
+type PracticeUndo = {
+  questionId: string;
+  selected: number[];
+  previousAnswer?: Progress["answered"][string];
+};
 
 const STORAGE_KEY = "cpre-english-study:v1";
 const EXAM_KEY = "cpre-english-study:exam:v1";
 const INTRO_KEY = "cpre-english-study:intro:v1";
-const APP_VERSION = "0.9.0";
+const APP_VERSION = "0.10.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -60,14 +65,20 @@ function questionScore(question: Question, selected: number[]) {
   return (hits / question.correct.length) * question.points;
 }
 
-function ChoiceList({ question, selected, onChange, disabled = false }: { question: Question; selected: number[]; onChange: (value: number[]) => void; disabled?: boolean }) {
+function formatAnswerOptions(question: Question, indexes: number[]) {
+  return indexes.map((index) => `${String.fromCharCode(65 + index)} · ${question.options[index]}`).join(" / ");
+}
+
+function ChoiceList({ question, selected, onChange, disabled = false, showResult = false }: { question: Question; selected: number[]; onChange: (value: number[]) => void; disabled?: boolean; showResult?: boolean }) {
   const multi = question.kind === "multiple";
   return (
     <div className="choices" role={multi ? "group" : "radiogroup"} aria-label="Answer choices">
       {question.options.map((option, index) => {
         const checked = selected.includes(index);
+        const correct = question.correct.includes(index);
+        const resultClass = showResult && correct ? "answer-correct" : showResult && checked ? "answer-wrong" : "";
         return (
-          <label className={`choice ${checked ? "selected" : ""}`} key={option}>
+          <label className={`choice ${checked ? "selected" : ""} ${resultClass}`} key={option}>
             <input
               type={multi ? "checkbox" : "radio"}
               name={question.id}
@@ -79,7 +90,9 @@ function ChoiceList({ question, selected, onChange, disabled = false }: { questi
               }}
             />
             <span className="choice-key">{String.fromCharCode(65 + index)}</span>
-            <span>{option}</span>
+            <span className="choice-text">{option}</span>
+            {showResult && correct && <span className="choice-result correct-result" lang="ja">正解</span>}
+            {showResult && checked && !correct && <span className="choice-result wrong-result" lang="ja">あなたの回答</span>}
           </label>
         );
       })}
@@ -96,6 +109,7 @@ export default function Home() {
   const [practiceQuestionId, setPracticeQuestionId] = useState(questions[0]?.id ?? "");
   const [practiceSelected, setPracticeSelected] = useState<number[]>([]);
   const [practiceChecked, setPracticeChecked] = useState(false);
+  const [practiceUndo, setPracticeUndo] = useState<PracticeUndo | null>(null);
   const [practiceUnit, setPracticeUnit] = useState<number | "all">("all");
   const [exam, setExam] = useState<ActiveExam | null>(null);
   const [examResult, setExamResult] = useState<MockResult | null>(null);
@@ -289,16 +303,41 @@ export default function Home() {
 
   function recordCorrectAndContinue(confidence: Confidence) {
     if (!practiceQuestion) return;
+    const undo: PracticeUndo = {
+      questionId: practiceQuestion.id,
+      selected: [...practiceSelected],
+      previousAnswer: progress.answered[practiceQuestion.id],
+    };
     recordAnswer(practiceQuestion, practiceSelected, confidence);
-    nextPractice();
+    nextPractice(undo);
   }
 
-  function nextPractice() {
+  function nextPractice(undo: PracticeUndo | null = null) {
     const nextId = selectNextQuestionId(practicePool.map((question) => question.id), practiceQuestion?.id ?? null, progress) ?? "";
     setPracticeQuestionId(nextId);
     setPracticeSelected([]);
     setPracticeChecked(false);
+    setPracticeUndo(undo);
     if (nextId) rememberActivity({ type: "practice", unit: practiceUnit, questionId: nextId });
+  }
+
+  function undoPracticeAdvance() {
+    if (!practiceUndo) return;
+    const undo = practiceUndo;
+    setProgress((current) => {
+      const answered = { ...current.answered };
+      if (undo.previousAnswer) answered[undo.questionId] = undo.previousAnswer;
+      else delete answered[undo.questionId];
+      return {
+        ...current,
+        answered,
+        lastActivity: { type: "practice", at: new Date().toISOString(), unit: practiceUnit, questionId: undo.questionId },
+      };
+    });
+    setPracticeQuestionId(undo.questionId);
+    setPracticeSelected(undo.selected);
+    setPracticeChecked(true);
+    setPracticeUndo(null);
   }
 
   function beginPractice(unit: number | "all" = practiceUnit) {
@@ -308,6 +347,7 @@ export default function Home() {
     setPracticeQuestionId(nextId);
     setPracticeSelected([]);
     setPracticeChecked(false);
+    setPracticeUndo(null);
     if (nextId) rememberActivity({ type: "practice", unit, questionId: nextId });
     setView("practice");
   }
@@ -457,6 +497,7 @@ export default function Home() {
     setPracticeQuestionId(nextId ?? "");
     setPracticeSelected([]);
     setPracticeChecked(false);
+    setPracticeUndo(null);
     if (nextId) rememberActivity({ type: "practice", unit, questionId: nextId });
     setView("practice");
   }
@@ -668,6 +709,7 @@ export default function Home() {
       setPracticeQuestionId(nextId);
       setPracticeSelected([]);
       setPracticeChecked(false);
+      setPracticeUndo(null);
       if (nextId) rememberActivity({ type: "practice", unit, questionId: nextId });
     };
     if (!practiceQuestion) {
@@ -678,7 +720,7 @@ export default function Home() {
       return (
         <>
           <header className="page-head practice-head"><div><span className="eyebrow">PRACTICE</span><h1>Decide in English.</h1></div><label className="filter">Unit<select value={practiceUnit} onChange={(event) => changePracticeUnit(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">All units</option>{units.map((unit) => <option key={unit.id} value={unit.id}>EU {unit.id}</option>)}</select></label></header>
-          <section className="empty panel" lang="ja"><span>✓</span><h2>今すぐ復習する問題なし</h2><p>正解した問題は復習間隔を確保。{nextDates[0] ? `次回は ${formatAttemptDate(nextDates[0])}` : "まず学習ドキュメントから"}</p><button className="button primary" onClick={() => setView("home")}>学習状況へ戻る</button></section>
+          <section className="empty panel" lang="ja"><span>✓</span><h2>今すぐ復習する問題なし</h2><p>正解した問題は復習間隔を確保。{nextDates[0] ? `次回は ${formatAttemptDate(nextDates[0])}` : "まず学習ドキュメントから"}</p><div className="empty-actions">{practiceUndo && <button className="button secondary" onClick={undoPracticeAdvance}>← 直前の問題に戻る</button>}<button className="button primary" onClick={() => setView("home")}>学習状況へ戻る</button></div></section>
         </>
       );
     }
@@ -695,13 +737,17 @@ export default function Home() {
       <>
         <header className="page-head practice-head"><div><span className="eyebrow">PRACTICE</span><h1>Decide in English.</h1></div><label className="filter">Unit<select value={practiceUnit} onChange={(event) => changePracticeUnit(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">All units</option>{units.map((unit) => <option key={unit.id} value={unit.id}>EU {unit.id}</option>)}</select></label></header>
         <section className="question-card panel">
-          <div className="question-top"><div><span className={`kind ${practiceQuestion.kind}`}>{practiceQuestion.kind === "boolean" ? "TRUE / FALSE" : practiceQuestion.kind.toUpperCase()}</span><span>{practiceQuestion.id} · {practiceQuestion.eo}</span></div><button className={`bookmark ${progress.bookmarks.includes(practiceQuestion.id) ? "active" : ""}`} aria-label="Bookmark question" onClick={() => setProgress((current) => ({ ...current, bookmarks: current.bookmarks.includes(practiceQuestion.id) ? current.bookmarks.filter((id) => id !== practiceQuestion.id) : [...current.bookmarks, practiceQuestion.id] }))}>☆</button></div>
+          <div className="question-top"><div><span className={`kind ${practiceQuestion.kind}`}>{practiceQuestion.kind === "boolean" ? "TRUE / FALSE" : practiceQuestion.kind.toUpperCase()}</span><span>{practiceQuestion.id} · {practiceQuestion.eo}</span></div><div className="question-tools">{practiceUndo && <button className="practice-undo" lang="ja" onClick={undoPracticeAdvance}>← 直前の問題に戻る</button>}<button className={`bookmark ${progress.bookmarks.includes(practiceQuestion.id) ? "active" : ""}`} aria-label="Bookmark question" onClick={() => setProgress((current) => ({ ...current, bookmarks: current.bookmarks.includes(practiceQuestion.id) ? current.bookmarks.filter((id) => id !== practiceQuestion.id) : [...current.bookmarks, practiceQuestion.id] }))}>☆</button></div></div>
           <h2>{practiceQuestion.prompt}</h2>
           {practiceQuestion.kind === "multiple" && <p className="instruction">Select {practiceQuestion.correct.length} answers.</p>}
-          <ChoiceList question={practiceQuestion} selected={practiceSelected} onChange={setPracticeSelected} disabled={practiceChecked} />
+          <ChoiceList question={practiceQuestion} selected={practiceSelected} onChange={(value) => { setPracticeSelected(value); setPracticeUndo(null); }} disabled={practiceChecked} showResult={practiceChecked} />
           {!practiceChecked ? <button className="button primary full" disabled={!practiceSelected.length} onClick={checkPracticeAnswer}>Check answer</button> : (
             <div className={`feedback ${answerCorrect ? "correct" : "incorrect"}`}>
               <strong>{answerCorrect ? "Correct" : "Not quite"}</strong>
+              <div className="answer-result" lang="ja">
+                <div className="answer-result-correct"><span>正解</span><strong>{formatAnswerOptions(practiceQuestion, practiceQuestion.correct)}</strong></div>
+                {!answerCorrect && <div className="answer-result-selected"><span>あなたの回答</span><strong>{formatAnswerOptions(practiceQuestion, practiceSelected)}</strong></div>}
+              </div>
               <p lang="ja">{practiceQuestion.explanationJa}</p>
               <div className="feedback-meta"><span>Keyword: {practiceQuestion.keyword}</span><span>{practiceQuestion.source}</span></div>
               {answerCorrect ? (
@@ -725,13 +771,13 @@ export default function Home() {
               ) : (
                 <>
                   <p className="incorrect-review-note" lang="ja">不正解として記録済み · 1日後にもう一度出す</p>
-                  <button className="button primary" onClick={nextPractice}>Next question →</button>
+                  <button className="button primary" onClick={() => nextPractice({ questionId: practiceQuestion.id, selected: [...practiceSelected], previousAnswer: prior })}>Next question →</button>
                 </>
               )}
             </div>
           )}
           <div className="attempt-summary" lang="ja">
-            {prior ? <><div className="attempt-stats"><span><small>解答</small><strong>{stats.attempts}回</strong></span><span><small>正解</small><strong>{stats.correctCount}回</strong></span><span><small>連続</small><strong>{stats.consecutiveCorrect}回</strong></span><span><small>次回</small><strong>{stats.due ? "今日" : stats.nextReviewAt ? formatAttemptDate(stats.nextReviewAt) : "未設定"}</strong></span></div>{history.length > 0 && <details><summary>解答履歴</summary><ol>{history.map((attempt, index) => <li key={`${attempt.at}-${index}`}><strong className={attempt.correct ? "history-correct" : "history-wrong"}>{attempt.correct ? "正解" : "不正解"}</strong><span>{attempt.correct ? attempt.confidence === "high" ? "自信あり" : attempt.confidence === "medium" ? "少し迷った" : attempt.confidence === "low" ? "自信なし" : "旧データ" : ""}</span><time>{formatAttemptDate(attempt.at)}</time>{attempt.intervalDays && <em>→ {attempt.intervalDays}日後</em>}</li>)}</ol>{stats.attempts > history.length && <small>直近{history.length}件</small>}</details>}</> : <p>解答履歴なし</p>}
+            {prior ? <><div className="attempt-stats"><span><small>解答</small><strong>{stats.attempts}回</strong></span><span><small>正解</small><strong>{stats.correctCount}回</strong></span><span><small>連続</small><strong>{stats.consecutiveCorrect}回</strong></span><span><small>次回</small><strong>{stats.due ? "今日" : stats.nextReviewAt ? formatAttemptDate(stats.nextReviewAt) : "未設定"}</strong></span></div>{history.length > 0 && <details><summary>解答履歴</summary><ol>{history.map((attempt, index) => <li key={`${attempt.at}-${index}`}><strong className={attempt.correct ? "history-correct" : "history-wrong"}>{attempt.correct ? "正解" : "不正解"}</strong><span>{attempt.correct ? attempt.confidence === "high" ? "自信あり" : attempt.confidence === "medium" ? "少し迷った" : attempt.confidence === "low" ? "自信なし" : "旧データ" : `回答 ${attempt.selected.map((option) => String.fromCharCode(65 + option)).join(",")}`}</span><time>{formatAttemptDate(attempt.at)}</time>{attempt.intervalDays && <em>→ {attempt.intervalDays}日後</em>}</li>)}</ol>{stats.attempts > history.length && <small>直近{history.length}件</small>}</details>}</> : <p>解答履歴なし</p>}
           </div>
         </section>
       </>
