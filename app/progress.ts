@@ -1,4 +1,13 @@
-export type AnswerRecord = { selected: number[]; correct: boolean; lastAt: string };
+export type Confidence = "low" | "medium" | "high";
+export type AttemptRecord = {
+  selected: number[];
+  correct: boolean;
+  at: string;
+  confidence?: Confidence;
+  intervalDays?: number;
+  dueAt?: string;
+};
+export type AnswerRecord = { selected: number[]; correct: boolean; lastAt: string; attempts: AttemptRecord[] };
 export type MockResult = { at: string; percent: number; correct: number; points: number; total: number };
 
 export type Progress = {
@@ -28,6 +37,23 @@ export type ScheduleProgress = {
   difference: number;
   questionsPerDay: number;
   status: "ahead" | "on-track" | "behind" | "due";
+};
+
+export type AnswerStats = {
+  attempts: number;
+  correctCount: number;
+  incorrectCount: number;
+  consecutiveCorrect: number;
+  lastCorrectAt: string | null;
+  nextReviewAt: string | null;
+  due: boolean;
+};
+
+export type ReviewSchedule = {
+  intervalDays: number;
+  dueAt: string;
+  factor: number;
+  isFirstCorrect: boolean;
 };
 
 export type ActiveExam = {
@@ -72,7 +98,31 @@ export function parseProgress(value: unknown): Progress | null {
   const answered: Record<string, AnswerRecord> = {};
   for (const [id, raw] of Object.entries(value.answered)) {
     if (!isRecord(raw) || !numberArray(raw.selected) || typeof raw.correct !== "boolean" || typeof raw.lastAt !== "string") return null;
-    answered[id] = { selected: raw.selected, correct: raw.correct, lastAt: raw.lastAt };
+    const attempts: AttemptRecord[] = [];
+    if (raw.attempts !== undefined) {
+      if (!Array.isArray(raw.attempts)) return null;
+      for (const attempt of raw.attempts) {
+        if (!isRecord(attempt) || !numberArray(attempt.selected) || typeof attempt.correct !== "boolean" || typeof attempt.at !== "string") return null;
+        const confidence = attempt.confidence;
+        if (confidence !== undefined && confidence !== "low" && confidence !== "medium" && confidence !== "high") return null;
+        if (attempt.intervalDays !== undefined && !Number.isFinite(attempt.intervalDays)) return null;
+        if (attempt.dueAt !== undefined && typeof attempt.dueAt !== "string") return null;
+        attempts.push({
+          selected: attempt.selected,
+          correct: attempt.correct,
+          at: attempt.at,
+          ...(confidence ? { confidence } : {}),
+          ...(Number.isFinite(attempt.intervalDays) ? { intervalDays: Number(attempt.intervalDays) } : {}),
+          ...(typeof attempt.dueAt === "string" ? { dueAt: attempt.dueAt } : {}),
+        });
+      }
+    }
+    answered[id] = {
+      selected: raw.selected,
+      correct: raw.correct,
+      lastAt: raw.lastAt,
+      attempts: attempts.length ? attempts.slice(-50) : [{ selected: raw.selected, correct: raw.correct, at: raw.lastAt }],
+    };
   }
 
   const mockHistory: MockResult[] = [];
@@ -164,4 +214,89 @@ export function calculateSchedule(progress: Progress, readiness: number, now = n
         ? "behind"
         : "on-track";
   return { daysLeft, expectedByToday: Math.round(expectedByToday), difference, questionsPerDay, status };
+}
+
+const firstCorrectIntervals: Record<Confidence, number> = { low: 1, medium: 2, high: 5 };
+const correctFactors: Record<Confidence, number> = { low: 1.2, medium: 2.5, high: 3.25 };
+const incorrectFactors: Record<Confidence, number> = { low: 0.25, medium: 0.15, high: 0.05 };
+
+export function calculateNextReview(record: AnswerRecord | undefined, correct: boolean, confidence: Confidence, at = new Date()): ReviewSchedule {
+  const attempts = record?.attempts ?? [];
+  const previousInterval = attempts.at(-1)?.intervalDays ?? 0;
+  const hasCorrectAttempt = attempts.some((attempt) => attempt.correct);
+  const isFirstCorrect = correct && !hasCorrectAttempt;
+  const factor = correct ? correctFactors[confidence] : incorrectFactors[confidence];
+  const intervalDays = isFirstCorrect
+    ? firstCorrectIntervals[confidence]
+    : correct
+      ? Math.max(previousInterval + 1, Math.round(Math.max(1, previousInterval) * factor))
+      : Math.max(1, Math.round(Math.max(1, previousInterval) * factor));
+  const due = new Date(at);
+  due.setTime(due.getTime() + intervalDays * 86_400_000);
+  return { intervalDays, dueAt: due.toISOString(), factor, isFirstCorrect };
+}
+
+export function getAnswerStats(record?: AnswerRecord, now = new Date()): AnswerStats {
+  if (!record) {
+    return { attempts: 0, correctCount: 0, incorrectCount: 0, consecutiveCorrect: 0, lastCorrectAt: null, nextReviewAt: null, due: true };
+  }
+  const attempts: AttemptRecord[] = record.attempts?.length
+    ? record.attempts
+    : [{ selected: record.selected, correct: record.correct, at: record.lastAt }];
+  const correctAttempts = attempts.filter((attempt) => attempt.correct);
+  let consecutiveCorrect = 0;
+  for (let index = attempts.length - 1; index >= 0 && attempts[index].correct; index -= 1) consecutiveCorrect += 1;
+  const lastCorrectAt = correctAttempts.at(-1)?.at ?? null;
+  const latestDueAt = attempts.at(-1)?.dueAt;
+  if (latestDueAt) {
+    return {
+      attempts: attempts.length,
+      correctCount: correctAttempts.length,
+      incorrectCount: attempts.length - correctAttempts.length,
+      consecutiveCorrect,
+      lastCorrectAt,
+      nextReviewAt: latestDueAt,
+      due: new Date(latestDueAt).getTime() <= now.getTime(),
+    };
+  }
+  if (!record.correct || !lastCorrectAt) {
+    return {
+      attempts: attempts.length,
+      correctCount: correctAttempts.length,
+      incorrectCount: attempts.length - correctAttempts.length,
+      consecutiveCorrect,
+      lastCorrectAt,
+      nextReviewAt: null,
+      due: true,
+    };
+  }
+  const nextReview = new Date(lastCorrectAt);
+  nextReview.setTime(nextReview.getTime() + 86_400_000);
+  return {
+    attempts: attempts.length,
+    correctCount: correctAttempts.length,
+    incorrectCount: attempts.length - correctAttempts.length,
+    consecutiveCorrect,
+    lastCorrectAt,
+    nextReviewAt: nextReview.toISOString(),
+    due: nextReview.getTime() <= now.getTime(),
+  };
+}
+
+export function selectNextQuestionId(ids: string[], currentId: string | null, progress: Progress, now = new Date()): string | null {
+  const candidates = ids
+    .filter((id) => id !== currentId || ids.length === 1)
+    .map((id, order) => {
+      const record = progress.answered[id];
+      const stats = getAnswerStats(record, now);
+      const latestConfidence = record?.attempts?.at(-1)?.confidence;
+      const misconceptionWeight = latestConfidence === "high" ? 0 : latestConfidence === "medium" ? 1 : 2;
+      const priority = !record ? 10 : !stats.due ? 30 : !record.correct ? misconceptionWeight : 20;
+      return { id, order, record, priority };
+    })
+    .filter((candidate) => candidate.priority < 30)
+    .sort((a, b) => a.priority - b.priority
+      || (a.record?.lastAt ?? "").localeCompare(b.record?.lastAt ?? "")
+      || a.order - b.order);
+  return candidates[0]?.id ?? null;
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { questions, sources, units, type Question } from "./data";
-import { calculateReadiness, calculateSchedule, initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, type ActiveExam, type MockResult, type Progress } from "./progress";
+import { calculateNextReview, calculateReadiness, calculateSchedule, getAnswerStats, initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, selectNextQuestionId, type ActiveExam, type Confidence, type MockResult, type Progress } from "./progress";
 import { studyGuides } from "./study";
 
 type View = "home" | "learn" | "practice" | "exam" | "review" | "sources";
@@ -11,7 +11,7 @@ type SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";
 const STORAGE_KEY = "cpre-english-study:v1";
 const EXAM_KEY = "cpre-english-study:exam:v1";
 const INTRO_KEY = "cpre-english-study:intro:v1";
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.5.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -51,6 +51,10 @@ function localDateInput(date = new Date()) {
 function formatChecked(value?: string) {
   if (!value) return "Not checked yet";
   return `Last checked ${new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value))}`;
+}
+
+function formatAttemptDate(value: string) {
+  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 function questionScore(question: Question, selected: number[]) {
@@ -93,9 +97,10 @@ export default function Home() {
   const [selectedStudyUnit, setSelectedStudyUnit] = useState<number | null>(null);
   const [progress, setProgress] = useState<Progress>(initialProgress);
   const [hydrated, setHydrated] = useState(false);
-  const [practiceIndex, setPracticeIndex] = useState(0);
+  const [practiceQuestionId, setPracticeQuestionId] = useState(questions[0]?.id ?? "");
   const [practiceSelected, setPracticeSelected] = useState<number[]>([]);
   const [practiceChecked, setPracticeChecked] = useState(false);
+  const [practiceConfidence, setPracticeConfidence] = useState<Confidence | null>(null);
   const [practiceUnit, setPracticeUnit] = useState<number | "all">("all");
   const [exam, setExam] = useState<ActiveExam | null>(null);
   const [examResult, setExamResult] = useState<MockResult | null>(null);
@@ -248,27 +253,50 @@ export default function Home() {
   }, [toast]);
 
   const practicePool = useMemo(() => practiceUnit === "all" ? questions : questions.filter((question) => question.unit === practiceUnit), [practiceUnit]);
-  const practiceQuestion = practicePool[practiceIndex % practicePool.length] ?? questions[0];
+  const practiceQuestion = practicePool.find((question) => question.id === practiceQuestionId) ?? null;
   const readiness = useMemo(() => calculateReadiness(progress), [progress]);
   const schedule = useMemo(() => calculateSchedule(progress, readiness.total), [progress, readiness.total]);
   const examQuestions = exam ? exam.order.map((id) => questions.find((question) => question.id === id)!).filter(Boolean) : [];
   const currentExamQuestion = exam ? examQuestions[exam.index] : null;
   const secondsLeft = exam ? Math.max(0, Math.ceil((exam.endsAt - now) / 1000)) : 75 * 60;
 
-  function recordAnswer(question: Question, selected: number[]) {
+  function recordAnswer(question: Question, selected: number[], confidence: Confidence) {
     const correct = sameAnswer(selected, question.correct);
-    setProgress((current) => ({
-      ...current,
-      answered: { ...current.answered, [question.id]: { selected, correct, lastAt: new Date().toISOString() } },
-      review: correct ? current.review : Array.from(new Set([...current.review, question.id])),
-    }));
+    const at = new Date().toISOString();
+    setProgress((current) => {
+      const schedule = calculateNextReview(current.answered[question.id], correct, confidence, new Date(at));
+      return {
+        ...current,
+        answered: {
+          ...current.answered,
+          [question.id]: {
+            selected,
+            correct,
+            lastAt: at,
+            attempts: [...(current.answered[question.id]?.attempts ?? []), { selected, correct, at, confidence, intervalDays: schedule.intervalDays, dueAt: schedule.dueAt }].slice(-50),
+          },
+        },
+        review: correct ? current.review : Array.from(new Set([...current.review, question.id])),
+      };
+    });
     return correct;
   }
 
   function nextPractice() {
-    setPracticeIndex((index) => (index + 1) % practicePool.length);
+    setPracticeQuestionId(selectNextQuestionId(practicePool.map((question) => question.id), practiceQuestion?.id ?? null, progress) ?? "");
     setPracticeSelected([]);
     setPracticeChecked(false);
+    setPracticeConfidence(null);
+  }
+
+  function beginPractice(unit: number | "all" = practiceUnit) {
+    const pool = unit === "all" ? questions : questions.filter((question) => question.unit === unit);
+    setPracticeUnit(unit);
+    setPracticeQuestionId(selectNextQuestionId(pool.map((question) => question.id), null, progress) ?? "");
+    setPracticeSelected([]);
+    setPracticeChecked(false);
+    setPracticeConfidence(null);
+    setView("practice");
   }
 
   function startExam() {
@@ -380,7 +408,8 @@ export default function Home() {
 
   function finishIntro(target: View) {
     localStorage.setItem(INTRO_KEY, "done");
-    setView(target);
+    if (target === "practice") beginPractice("all");
+    else setView(target);
     setShowIntro(false);
   }
 
@@ -391,11 +420,7 @@ export default function Home() {
   }
 
   function startUnitPractice(unitId: number) {
-    setPracticeUnit(unitId);
-    setPracticeIndex(0);
-    setPracticeSelected([]);
-    setPracticeChecked(false);
-    setView("practice");
+    beginPractice(unitId);
   }
 
   function renderIntro() {
@@ -447,7 +472,7 @@ export default function Home() {
             <h1>Build precise RE judgment,<br />one objective at a time.</h1>
             <p>45 original questions grounded in the official English syllabus. Explanations appear only after you answer.</p>
             <div className="hero-actions">
-              <button className="button primary" onClick={() => { setView("practice"); setPracticeChecked(false); }}>Continue practice</button>
+              <button className="button primary" onClick={() => beginPractice("all")}>Continue practice</button>
               <button className="button secondary" onClick={startExam}>Start 75-min exam</button>
               <button className="button secondary" lang="ja" onClick={() => setShowIntro(true)}>コース概要を見る</button>
             </div>
@@ -462,7 +487,7 @@ export default function Home() {
 
         <section className="mode-grid" lang="ja" aria-label="学習方法を選ぶ">
           <article className="mode-card study-mode panel"><span>01 · STUDY</span><h2>勉強する</h2><p>7単元の日本語ドキュメントを、図解と英語キーワードで読みます。</p><button className="button primary" onClick={() => { setSelectedStudyUnit(null); setView("learn"); }}>学習ドキュメントを開く →</button></article>
-          <article className="mode-card test-mode panel"><span>02 · TEST</span><h2>テストする</h2><p>1問ずつの練習か、45問・75分の模擬試験で理解度を確認します。</p><div><button className="button primary" onClick={() => setView("practice")}>1問ずつ練習</button><button className="button secondary" onClick={() => setView("exam")}>45問の模擬試験</button></div></article>
+          <article className="mode-card test-mode panel"><span>02 · TEST</span><h2>テストする</h2><p>1問ずつの練習か、45問・75分の模擬試験で理解度を確認します。</p><div><button className="button primary" onClick={() => beginPractice("all")}>1問ずつ練習</button><button className="button secondary" onClick={() => setView("exam")}>45問の模擬試験</button></div></article>
         </section>
 
         <section className="progress-board panel" lang="ja" aria-labelledby="progress-title">
@@ -505,7 +530,7 @@ export default function Home() {
 
         <section className="focus panel">
           <div><span className="eyebrow">TODAY&apos;S FOCUS</span><h2>Differentiate requirement types</h2><p>Functional requirement, quality requirement, or constraint? Train the distinction in English.</p></div>
-          <button className="button primary" onClick={() => setView("practice")}>Practice EU 1</button>
+          <button className="button primary" onClick={() => beginPractice(1)}>Practice EU 1</button>
         </section>
       </>
     );
@@ -559,24 +584,73 @@ export default function Home() {
   }
 
   function renderPractice() {
+    const changePracticeUnit = (unit: number | "all") => {
+      const pool = unit === "all" ? questions : questions.filter((question) => question.unit === unit);
+      setPracticeUnit(unit);
+      setPracticeQuestionId(selectNextQuestionId(pool.map((question) => question.id), null, progress) ?? "");
+      setPracticeSelected([]);
+      setPracticeChecked(false);
+      setPracticeConfidence(null);
+    };
+    if (!practiceQuestion) {
+      const nextDates = practicePool
+        .map((question) => getAnswerStats(progress.answered[question.id]).nextReviewAt)
+        .filter((value): value is string => Boolean(value))
+        .sort();
+      return (
+        <>
+          <header className="page-head practice-head"><div><span className="eyebrow">PRACTICE</span><h1>Decide in English.</h1></div><label className="filter">Unit<select value={practiceUnit} onChange={(event) => changePracticeUnit(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">All units</option>{units.map((unit) => <option key={unit.id} value={unit.id}>EU {unit.id}</option>)}</select></label></header>
+          <section className="empty panel" lang="ja"><span>✓</span><h2>今すぐ復習する問題はありません。</h2><p>正解した問題は復習間隔を空けます。{nextDates[0] ? `次の復習予定は ${formatAttemptDate(nextDates[0])} です。` : "まず学習ドキュメントを読んでください。"}</p><button className="button primary" onClick={() => setView("home")}>学習状況へ戻る</button></section>
+        </>
+      );
+    }
     const prior = progress.answered[practiceQuestion.id];
+    const stats = getAnswerStats(prior);
+    const history = prior?.attempts?.slice(-10).reverse() ?? [];
+    const answerCorrect = sameAnswer(practiceSelected, practiceQuestion.correct);
+    const confidenceOptions: { value: Confidence; label: string; note: string }[] = [
+      { value: "low", label: "自信なし", note: "かなり迷った" },
+      { value: "medium", label: "少し迷った", note: "考えて答えた" },
+      { value: "high", label: "自信あり", note: "すぐ判断できた" },
+    ];
     return (
       <>
-        <header className="page-head practice-head"><div><span className="eyebrow">PRACTICE</span><h1>Decide in English.</h1></div><label className="filter">Unit<select value={practiceUnit} onChange={(event) => { setPracticeUnit(event.target.value === "all" ? "all" : Number(event.target.value)); setPracticeIndex(0); setPracticeSelected([]); setPracticeChecked(false); }}><option value="all">All units</option>{units.map((unit) => <option key={unit.id} value={unit.id}>EU {unit.id}</option>)}</select></label></header>
+        <header className="page-head practice-head"><div><span className="eyebrow">PRACTICE</span><h1>Decide in English.</h1></div><label className="filter">Unit<select value={practiceUnit} onChange={(event) => changePracticeUnit(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">All units</option>{units.map((unit) => <option key={unit.id} value={unit.id}>EU {unit.id}</option>)}</select></label></header>
         <section className="question-card panel">
           <div className="question-top"><div><span className={`kind ${practiceQuestion.kind}`}>{practiceQuestion.kind === "boolean" ? "TRUE / FALSE" : practiceQuestion.kind.toUpperCase()}</span><span>{practiceQuestion.id} · {practiceQuestion.eo}</span></div><button className={`bookmark ${progress.bookmarks.includes(practiceQuestion.id) ? "active" : ""}`} aria-label="Bookmark question" onClick={() => setProgress((current) => ({ ...current, bookmarks: current.bookmarks.includes(practiceQuestion.id) ? current.bookmarks.filter((id) => id !== practiceQuestion.id) : [...current.bookmarks, practiceQuestion.id] }))}>☆</button></div>
+          <div className="attempt-summary" lang="ja">
+            {prior ? <><div className="attempt-stats"><span><small>解答</small><strong>{stats.attempts}回</strong></span><span><small>正解</small><strong>{stats.correctCount}回</strong></span><span><small>連続正解</small><strong>{stats.consecutiveCorrect}回</strong></span></div><div className="attempt-timing"><span>最終正解: {stats.lastCorrectAt ? formatAttemptDate(stats.lastCorrectAt) : "まだありません"}</span><span>次回復習: {stats.due ? "復習期限が来ています" : stats.nextReviewAt ? formatAttemptDate(stats.nextReviewAt) : "今回の判定後に設定"}</span></div>{history.length > 0 && <details><summary>過去の解答履歴を見る</summary><ol>{history.map((attempt, index) => <li key={`${attempt.at}-${index}`}><strong className={attempt.correct ? "history-correct" : "history-wrong"}>{attempt.correct ? "正解" : "不正解"}</strong><span>{attempt.confidence === "high" ? "自信あり" : attempt.confidence === "medium" ? "少し迷った" : attempt.confidence === "low" ? "自信なし" : "旧データ"}</span><time>{formatAttemptDate(attempt.at)}</time>{attempt.intervalDays && <em>→ {attempt.intervalDays}日後</em>}</li>)}</ol>{stats.attempts > history.length && <small>直近{history.length}件を表示</small>}</details>}</> : <p>この問題は初回です。</p>}
+          </div>
           <h2>{practiceQuestion.prompt}</h2>
           {practiceQuestion.kind === "multiple" && <p className="instruction">Select {practiceQuestion.correct.length} answers.</p>}
           <ChoiceList question={practiceQuestion} selected={practiceSelected} onChange={setPracticeSelected} disabled={practiceChecked} />
-          {!practiceChecked ? <button className="button primary full" disabled={!practiceSelected.length} onClick={() => { recordAnswer(practiceQuestion, practiceSelected); setPracticeChecked(true); }}>Check answer</button> : (
-            <div className={`feedback ${sameAnswer(practiceSelected, practiceQuestion.correct) ? "correct" : "incorrect"}`}>
-              <strong>{sameAnswer(practiceSelected, practiceQuestion.correct) ? "Correct" : "Not quite"}</strong>
+          {!practiceChecked ? <button className="button primary full" disabled={!practiceSelected.length} onClick={() => setPracticeChecked(true)}>Check answer</button> : (
+            <div className={`feedback ${answerCorrect ? "correct" : "incorrect"}`}>
+              <strong>{answerCorrect ? "Correct" : "Not quite"}</strong>
               <p lang="ja">{practiceQuestion.explanationJa}</p>
               <div className="feedback-meta"><span>Keyword: {practiceQuestion.keyword}</span><span>{practiceQuestion.source}</span></div>
-              <button className="button primary" onClick={nextPractice}>Next question →</button>
+              <div className="confidence-prompt" lang="ja">
+                <strong>答えるときの自信は？</strong>
+                <p>正誤と自信の両方で、次に出す日を決めます。</p>
+                <div className="confidence-options">{confidenceOptions.map((option) => {
+                  const schedule = calculateNextReview(prior, answerCorrect, option.value);
+                  const savedDays = prior?.attempts?.at(-1)?.intervalDays;
+                  const shownDays = practiceConfidence === option.value && savedDays ? savedDays : schedule.intervalDays;
+                  return <button key={option.value} className={practiceConfidence === option.value ? "selected" : ""} disabled={practiceConfidence !== null} onClick={() => { setPracticeConfidence(option.value); recordAnswer(practiceQuestion, practiceSelected, option.value); }}><span>{option.label}</span><small>{option.note}</small><strong>{shownDays}日後</strong></button>;
+                })}</div>
+              </div>
+              <details className="schedule-formula" open lang="ja">
+                <summary>次回日の計算式</summary>
+                <p><b>初回正解</b>：自信なし 1日／少し迷った 2日／自信あり 5日</p>
+                <p><b>2回目以降の正解</b>：max（前回間隔＋1日, 四捨五入［前回間隔 × 自信係数］）</p>
+                <p>自信係数：自信なし ×1.2／少し迷った ×2.5／自信あり ×3.25</p>
+                <p><b>不正解</b>：max（1日, 四捨五入［前回間隔 × 戻し係数］）</p>
+                <p>戻し係数：自信なし ×0.25／少し迷った ×0.15／自信あり ×0.05。自信を持って間違えた場合は、誤った確信として強く間隔を戻します。</p>
+                <p className="formula-example">例：少し迷って正解を続けた場合 2日 → 5日 → 13日 → 33日</p>
+              </details>
+              {practiceConfidence && <button className="button primary" onClick={nextPractice}>Next question →</button>}
             </div>
           )}
-          {prior && !practiceChecked && <small className="prior">Last attempt: {prior.correct ? "correct" : "incorrect"}</small>}
         </section>
       </>
     );
@@ -608,7 +682,7 @@ export default function Home() {
     return (
       <>
         <header className="page-head"><span className="eyebrow">REVIEW</span><h1>Turn misses into signals.</h1><p>Your queue is saved to private Git history and cached locally for offline use.</p></header>
-        {!reviewQuestions.length ? <section className="empty panel"><span>✓</span><h2>Your review queue is clear.</h2><p>Missed practice and mock-exam questions will appear here.</p><button className="button primary" onClick={() => setView("practice")}>Practice now</button></section> : <div className="review-list">{reviewQuestions.map((question) => { const record = progress.answered[question.id]; return <article className="review-card panel" key={question.id}><div className="review-label"><span>EU {question.unit}</span><span>{question.eo}</span><span>{question.id}</span></div><h2>{question.prompt}</h2><p className="answer-line">Correct: {question.correct.map((index) => question.options[index]).join(" · ")}</p><p className="jp-note" lang="ja">{question.explanationJa}</p><div className="feedback-meta"><span>Keyword: {question.keyword}</span><span>{question.source}</span></div><div className="review-actions"><small>{record ? `Last attempt: ${record.correct ? "correct" : "incorrect"}` : "From mock exam"}</small><button className="button compact secondary" onClick={() => setProgress((current) => ({ ...current, review: current.review.filter((id) => id !== question.id) }))}>Mark mastered</button></div></article>; })}</div>}
+        {!reviewQuestions.length ? <section className="empty panel"><span>✓</span><h2>Your review queue is clear.</h2><p>Missed practice and mock-exam questions will appear here.</p><button className="button primary" onClick={() => beginPractice("all")}>Practice now</button></section> : <div className="review-list">{reviewQuestions.map((question) => { const record = progress.answered[question.id]; return <article className="review-card panel" key={question.id}><div className="review-label"><span>EU {question.unit}</span><span>{question.eo}</span><span>{question.id}</span></div><h2>{question.prompt}</h2><p className="answer-line">Correct: {question.correct.map((index) => question.options[index]).join(" · ")}</p><p className="jp-note" lang="ja">{question.explanationJa}</p><div className="feedback-meta"><span>Keyword: {question.keyword}</span><span>{question.source}</span></div><div className="review-actions"><small>{record ? `Last attempt: ${record.correct ? "correct" : "incorrect"}` : "From mock exam"}</small><button className="button compact secondary" onClick={() => setProgress((current) => ({ ...current, review: current.review.filter((id) => id !== question.id) }))}>Mark mastered</button></div></article>; })}</div>}
       </>
     );
   }
@@ -631,11 +705,11 @@ export default function Home() {
     <div className="app-shell">
       <aside className="sidebar">
         <button className="brand" onClick={() => setView("home")}><span>CR</span><div><strong>CPRE</strong><small>English Study</small></div></button>
-        <nav aria-label="Primary navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.id === "home" ? "⌂" : item.id === "learn" ? "≡" : item.id === "practice" ? "◇" : item.id === "exam" ? "◷" : "↺"}</i><span>{item.label}</span>{item.id === "review" && progress.review.length > 0 && <em>{progress.review.length}</em>}</button>)}</nav>
+        <nav aria-label="Primary navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => item.id === "practice" ? beginPractice("all") : setView(item.id)}><i>{item.id === "home" ? "⌂" : item.id === "learn" ? "≡" : item.id === "practice" ? "◇" : item.id === "exam" ? "◷" : "↺"}</i><span>{item.label}</span>{item.id === "review" && progress.review.length > 0 && <em>{progress.review.length}</em>}</button>)}</nav>
         <div className="sidebar-foot"><button lang="ja" onClick={() => setShowIntro(true)}>コース概要を見る</button><button onClick={() => setView("sources")}>About & sources</button><button onClick={() => void connectSync()}>{syncLabel}</button><small>v{APP_VERSION} · GitHub + offline cache</small></div>
       </aside>
       <main className="main-content">{view === "home" && renderHome()}{view === "learn" && renderLearn()}{view === "practice" && renderPractice()}{view === "exam" && renderExam()}{view === "review" && renderReview()}{view === "sources" && renderSources()}<footer><span>Unofficial CPRE Foundation Level study tool.</span><button onClick={() => setView("sources")}>Sources & copyright</button></footer></main>
-      <nav className="bottom-nav" aria-label="Mobile navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.id === "home" ? "⌂" : item.id === "learn" ? "≡" : item.id === "practice" ? "◇" : item.id === "exam" ? "◷" : "↺"}</i><span>{item.short}</span></button>)}</nav>
+      <nav className="bottom-nav" aria-label="Mobile navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => item.id === "practice" ? beginPractice("all") : setView(item.id)}><i>{item.id === "home" ? "⌂" : item.id === "learn" ? "≡" : item.id === "practice" ? "◇" : item.id === "exam" ? "◷" : "↺"}</i><span>{item.short}</span></button>)}</nav>
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
