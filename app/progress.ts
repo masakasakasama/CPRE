@@ -174,10 +174,12 @@ function clamp(value: number, min = 0, max = 100) {
 export function calculateReadiness(progress: Progress, totalQuestions = 45, totalUnits = 7): ReadinessBreakdown {
   const answered = Object.values(progress.answered);
   const correct = answered.filter((answer) => answer.correct).length;
-  const coverage = clamp(answered.length / totalQuestions * 100);
-  const accuracy = answered.length ? correct / answered.length * 100 : 0;
-  const study = clamp(progress.completedUnits.length / totalUnits * 100);
-  const review = answered.length ? clamp((answered.length - progress.review.length) / answered.length * 100) : 0;
+  const mastered = answered.filter((answer) => getAnswerStats(answer).consecutiveCorrect >= 2).length;
+  const questionDenominator = Math.max(1, totalQuestions);
+  const coverage = clamp(answered.length / questionDenominator * 100);
+  const accuracy = clamp(correct / questionDenominator * 100);
+  const study = clamp(progress.completedUnits.length / Math.max(1, totalUnits) * 100);
+  const review = clamp(mastered / questionDenominator * 100);
   const mock = clamp(progress.mockHistory[0]?.percent ?? 0);
   const total = Math.round(coverage * 0.25 + accuracy * 0.30 + study * 0.15 + review * 0.10 + mock * 0.20);
   return {

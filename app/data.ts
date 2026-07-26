@@ -1,3 +1,5 @@
+import { additionalQuestions } from "./additional-questions.ts";
+
 export type Unit = {
   id: number;
   title: string;
@@ -45,7 +47,7 @@ export const units: Unit[] = [
     id: 3,
     title: "Work Products and Documentation Practices",
     level: "L3",
-    duration: "4 h 30 m",
+    duration: "7 h",
     keywords: ["work product", "requirements specification", "model", "prototype"],
     summaryJa: "文章、テンプレート、モデル、用語集、プロトタイプによる要求の表現",
     source: "Syllabus 3.3.0 · Chapter 3",
@@ -63,7 +65,7 @@ export const units: Unit[] = [
     id: 5,
     title: "Process and Working Structure",
     level: "L3",
-    duration: "1 h 45 m",
+    duration: "1 h 15 m",
     keywords: ["RE process", "process facet", "tailoring", "feedback loop"],
     summaryJa: "プロジェクトの状況に合わせた要求工学の進め方と作業順序",
     source: "Syllabus 3.3.0 · Chapter 5",
@@ -72,7 +74,7 @@ export const units: Unit[] = [
     id: 6,
     title: "Management Practices for Requirements",
     level: "L2",
-    duration: "2 h 30 m",
+    duration: "2 h",
     keywords: ["baseline", "traceability", "change request", "prioritization"],
     summaryJa: "要求の識別、版と変更履歴、関連成果物、変更、優先順位の管理",
     source: "Syllabus 3.3.0 · Chapter 6",
@@ -81,14 +83,14 @@ export const units: Unit[] = [
     id: 7,
     title: "Tool Support",
     level: "L2",
-    duration: "45 m",
+    duration: "30 m",
     keywords: ["RE tool", "tool introduction", "configuration", "training"],
     summaryJa: "要求工学ツールで支援できる範囲と限界、現場への導入方法",
     source: "Syllabus 3.3.0 · Chapter 7",
   },
 ];
 
-export const questions: Question[] = [
+const coreQuestions: Question[] = [
   {
     id: "Q001", unit: 1, eo: "EO 1.1.1", kind: "single", points: 1,
     prompt: "Which term denotes a person or organization that influences a system's requirements or is affected by the system?",
@@ -405,6 +407,8 @@ export const questions: Question[] = [
     source: "Syllabus 3.3.0 · 7.1–7.2",
   },
 ];
+
+export const questions: Question[] = [...coreQuestions, ...additionalQuestions];
 
 export const sources = [
   { id: "fl-syllabus-en", title: "CPRE Foundation Level Syllabus", version: "3.3.0", chapter: "EU 1–7", url: "https://cpre.ireb.org/en/downloads-and-resources/downloads#cpre-foundation-level-syllabus" },
