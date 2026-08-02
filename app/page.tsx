@@ -122,6 +122,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const lastSynced = useRef("");
   const practiceCardRef = useRef<HTMLElement | null>(null);
+  const practiceFeedbackRef = useRef<HTMLDivElement | null>(null);
 
   function syncHeaders(key = syncKey, token = githubToken): Record<string, string> {
     return {
@@ -269,6 +270,14 @@ export default function Home() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [practiceQuestionId, view]);
+
+  useEffect(() => {
+    if (view !== "practice" || !practiceChecked || !window.matchMedia("(max-width: 760px)").matches) return;
+    const frame = window.requestAnimationFrame(() => {
+      practiceFeedbackRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [practiceChecked, view]);
 
   const practicePool = useMemo(() => practiceUnit === "all" ? questions : questions.filter((question) => question.unit === practiceUnit), [practiceUnit]);
   const practiceQuestion = practicePool.find((question) => question.id === practiceQuestionId) ?? null;
@@ -751,7 +760,7 @@ export default function Home() {
           {practiceQuestion.kind === "multiple" && <p className="instruction">Select {practiceQuestion.correct.length} answers.</p>}
           <ChoiceList question={practiceQuestion} selected={practiceSelected} onChange={(value) => { setPracticeSelected(value); setPracticeUndo(null); }} disabled={practiceChecked} showResult={practiceChecked} />
           {!practiceChecked ? <button className="button primary full" disabled={!practiceSelected.length} onClick={checkPracticeAnswer}>Check answer</button> : (
-            <div className={`feedback ${answerCorrect ? "correct" : "incorrect"}`}>
+            <div className={`feedback ${answerCorrect ? "correct" : "incorrect"}`} ref={practiceFeedbackRef}>
               <strong>{answerCorrect ? "Correct" : "Not quite"}</strong>
               <div className="answer-result" lang="ja">
                 <div className="answer-result-correct"><span>正解</span><strong>{formatAnswerOptions(practiceQuestion, practiceQuestion.correct)}</strong></div>

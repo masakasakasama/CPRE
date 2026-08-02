@@ -38,6 +38,7 @@ test("contains a full practice bank and no starter dependency", async () => {
   assert.match(page, /前回の続き/);
   assert.match(page, /const APP_VERSION = "0\.11\.0"/);
   assert.match(page, /scrollIntoView\(\{ block: "start", behavior: "auto" \}\)/);
+  assert.match(page, /practiceFeedbackRef\.current\?\.scrollIntoView/);
   assert.match(page, /選ぶと次の問題へ進む/);
   assert.match(page, /不正解として記録済み · 1日後にもう一度出す/);
   assert.match(page, /あなたの回答/);
