@@ -248,7 +248,7 @@ h1 { letter-spacing: -.045em; }
 .practice-head, .source-head { flex-direction: row; justify-content: space-between; align-items: end; gap: 24px; }
 .filter { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; font-weight: 750; display: grid; gap: 7px; }
 .filter select { min-width: 160px; height: 42px; border-radius: 9px; background: #151920; border: 1px solid var(--line); color: var(--text); padding: 0 12px; }
-.question-card { max-width: 920px; margin: 0 auto; padding: clamp(24px, 5vw, 48px); }
+.question-card { max-width: 920px; margin: 0 auto; padding: clamp(24px, 5vw, 48px); scroll-margin-top: 12px; }
 .question-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
 .question-top > div { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 10px; }
 .question-top .question-tools { justify-content: flex-end; }

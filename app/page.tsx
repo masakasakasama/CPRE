@@ -17,7 +17,7 @@ type PracticeUndo = {
 const STORAGE_KEY = "cpre-english-study:v1";
 const EXAM_KEY = "cpre-english-study:exam:v1";
 const INTRO_KEY = "cpre-english-study:intro:v1";
-const APP_VERSION = "0.10.0";
+const APP_VERSION = "0.11.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -121,6 +121,7 @@ export default function Home() {
   const [remoteReady, setRemoteReady] = useState(false);
   const [toast, setToast] = useState("");
   const lastSynced = useRef("");
+  const practiceCardRef = useRef<HTMLElement | null>(null);
 
   function syncHeaders(key = syncKey, token = githubToken): Record<string, string> {
     return {
@@ -260,6 +261,14 @@ export default function Home() {
     const timeout = window.setTimeout(() => setToast(""), 2600);
     return () => window.clearTimeout(timeout);
   }, [toast]);
+
+  useEffect(() => {
+    if (view !== "practice" || !practiceQuestionId || !window.matchMedia("(max-width: 760px)").matches) return;
+    const frame = window.requestAnimationFrame(() => {
+      practiceCardRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [practiceQuestionId, view]);
 
   const practicePool = useMemo(() => practiceUnit === "all" ? questions : questions.filter((question) => question.unit === practiceUnit), [practiceUnit]);
   const practiceQuestion = practicePool.find((question) => question.id === practiceQuestionId) ?? null;
@@ -736,7 +745,7 @@ export default function Home() {
     return (
       <>
         <header className="page-head practice-head"><div><span className="eyebrow">PRACTICE</span><h1>Decide in English.</h1></div><label className="filter">Unit<select value={practiceUnit} onChange={(event) => changePracticeUnit(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">All units</option>{units.map((unit) => <option key={unit.id} value={unit.id}>EU {unit.id}</option>)}</select></label></header>
-        <section className="question-card panel">
+        <section className="question-card panel" ref={practiceCardRef}>
           <div className="question-top"><div><span className={`kind ${practiceQuestion.kind}`}>{practiceQuestion.kind === "boolean" ? "TRUE / FALSE" : practiceQuestion.kind.toUpperCase()}</span><span>{practiceQuestion.id} · {practiceQuestion.eo}</span></div><div className="question-tools">{practiceUndo && <button className="practice-undo" lang="ja" onClick={undoPracticeAdvance}>← 直前の問題に戻る</button>}<button className={`bookmark ${progress.bookmarks.includes(practiceQuestion.id) ? "active" : ""}`} aria-label="Bookmark question" onClick={() => setProgress((current) => ({ ...current, bookmarks: current.bookmarks.includes(practiceQuestion.id) ? current.bookmarks.filter((id) => id !== practiceQuestion.id) : [...current.bookmarks, practiceQuestion.id] }))}>☆</button></div></div>
           <h2>{practiceQuestion.prompt}</h2>
           {practiceQuestion.kind === "multiple" && <p className="instruction">Select {practiceQuestion.correct.length} answers.</p>}
