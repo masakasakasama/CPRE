@@ -1,4 +1,6 @@
 import { additionalQuestions } from "./additional-questions.ts";
+import { calibratedCoreQuestions } from "./calibrated-core-questions.ts";
+import { calibratedQuestions } from "./calibrated-questions.ts";
 
 export type Unit = {
   id: number;
@@ -408,7 +410,37 @@ const coreQuestions: Question[] = [
   },
 ];
 
-export const questions: Question[] = [...coreQuestions, ...additionalQuestions];
+function applyCalibratedContent(legacy: Question[], calibrated: Question[]): Question[] {
+  const calibratedById = new Map(calibrated.map((question) => [question.id, question]));
+  return legacy.map((question) => {
+    const upgraded = calibratedById.get(question.id);
+    if (!upgraded) return question;
+    const gradingChanged =
+      upgraded.kind !== question.kind ||
+      upgraded.points !== question.points ||
+      upgraded.correct.length !== question.correct.length ||
+      upgraded.correct.some((value, index) => value !== question.correct[index]);
+    if (gradingChanged) {
+      throw new Error(`Calibrated question ${question.id} changed grading metadata`);
+    }
+    if (upgraded.options.length !== question.options.length) {
+      throw new Error(`Calibrated question ${question.id} changed option count`);
+    }
+    return {
+      ...question,
+      prompt: upgraded.prompt,
+      options: upgraded.options,
+      keyword: upgraded.keyword,
+      explanationJa: upgraded.explanationJa,
+      source: upgraded.source,
+    };
+  });
+}
+
+const upgradedCoreQuestions = applyCalibratedContent(coreQuestions, calibratedCoreQuestions);
+const upgradedAdditionalQuestions = applyCalibratedContent(additionalQuestions, calibratedQuestions);
+
+export const questions: Question[] = [...upgradedCoreQuestions, ...upgradedAdditionalQuestions];
 
 export const sources = [
   { id: "fl-syllabus-en", title: "CPRE Foundation Level Syllabus", version: "3.3.0", chapter: "EU 1–7", url: "https://cpre.ireb.org/en/downloads-and-resources/downloads#cpre-foundation-level-syllabus" },
