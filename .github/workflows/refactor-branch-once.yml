@@ -1,0 +1,36 @@
+name: Refactor branch once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/refactor-v013-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/safe-v0.13.0
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply exact refactor
+        run: node scripts/apply-safe-refactor.mjs
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run content:validate
+      - run: npm run test
+      - name: Commit validated refactor to branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx package.json package-lock.json README.md handoff.md tests/question-grading-contract.json
+          git commit -m "Refactor app safely for v0.13.0"
+          git push origin HEAD:refactor/safe-v0.13.0
