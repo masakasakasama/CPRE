@@ -1,0 +1,29 @@
+name: Apply question quality upgrade
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/apply-question-quality-upgrade.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Switch to calibrated question content
+        run: node scripts/apply-question-quality-upgrade.mjs
+      - name: Commit generated data wiring
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/data.ts
+          git commit -m "Use calibrated CPRE question content"
+          git push
