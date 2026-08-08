@@ -1,0 +1,87 @@
+commit=958d9951ddab79aeaa1bc500c311d907d90a85e5
+npm_ci=0
+lint=0
+content_validate=0
+test=0
+validated_at=2026-08-08T13:01:29Z
+--- tail ---
+validated 185 English questions and 4 pinned official sources
+
+> cpre-english-study@0.12.0 test
+> npm run build && node --test tests/*.test.mjs
+
+
+> cpre-english-study@0.12.0 build
+> vinext build
+
+
+  vinext build  (Vite 8.0.13)
+
+[34m[1/5] analyze client references...[39m
+[2Ktransforming...✓ 135 modules transformed.
+rendering chunks...
+[32m✓ built in 437ms[39m
+[34m[2/5] analyze server references...[39m
+[2Ktransforming...✓ 70 modules transformed.
+rendering chunks...
+[32m✓ built in 136ms[39m
+[34m[3/5] build rsc environment...[39m
+[2Ktransforming...✓ 141 modules transformed.
+rendering chunks...
+computing gzip size...
+[32m✓ built in 441ms[39m
+[34m[4/5] build client environment...[39m
+[2Ktransforming...✓ 78 modules transformed.
+rendering chunks...
+computing gzip size...
+[32m✓ built in 182ms[39m
+[34m[5/5] build ssr environment...[39m
+[2Ktransforming...✓ 76 modules transformed.
+rendering chunks...
+computing gzip size...
+[32m✓ built in 265ms[39m
+[0m
+  Route (app)
+  ┌ ? /            
+  └ λ /api/progress
+
+  λ API  ? Unknown
+
+  ? Some routes could not be classified. vinext currently uses static analysis
+    and cannot detect dynamic API usage (headers(), cookies(), etc.) at build time.
+    Automatic classification will be improved in a future release.
+
+  Build complete. Run `vinext start` to start the production server.
+
+✔ persisted browser keys and progress schema stay compatible (1.149344ms)
+✔ expanded question bank keeps stable unique IDs (0.263664ms)
+✔ sync merge preserves older practice attempts when a mock overwrites the latest answer shape (1.692822ms)
+✔ sync merge keeps mock results from both snapshots without duplicates (1.0889ms)
+✔ an older device snapshot cannot replace newer non-answer progress or active exam state (0.258975ms)
+✔ accepts a complete GitHub progress document (3.061255ms)
+✔ rejects malformed progress before it can be committed (0.257232ms)
+✔ calculates a transparent knowledge estimate from five learning signals (0.538899ms)
+✔ does not inflate readiness from a few correct answers (0.311804ms)
+✔ keeps the pass estimate conservative when most questions are unseen (0.629719ms)
+✔ uses the latest mock as the main pass-estimate signal (0.293059ms)
+✔ counts a question as repeatedly mastered after two consecutive correct answers (0.557294ms)
+✔ compares knowledge estimate with the pace required by an exam date (0.377938ms)
+✔ migrates the legacy last answer into the first history entry (0.382256ms)
+✔ restores a resume point from the latest legacy answer (0.714609ms)
+✔ prefers an explicitly stored study resume point (0.188362ms)
+✔ weights first correct review by three confidence levels (0.203181ms)
+✔ records every incorrect answer for the next day without confidence (0.192921ms)
+✔ uses Anki-inspired multipliers for repeated correct answers (0.293359ms)
+✔ keeps recently scheduled questions out and exposes their due date (0.445455ms)
+✔ changes confidence on the current answer without adding another history entry (0.212478ms)
+✔ draws a fresh 45-question mock that follows the public unit blueprint (1.203394ms)
+✔ server-renders the CPRE study application shell (113.742943ms)
+✔ contains a full practice bank and no starter dependency (3.5554ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 357.445816
