@@ -52,11 +52,21 @@ jobs:
           const oldResult = '    const result: MockResult = { at: new Date().toISOString(), percent: Math.round((points / total) * 100), correct, points: Math.round(points * 10) / 10, total };';
           const newResult = '    const result: MockResult = { at: submittedAt, percent: Math.round((points / total) * 100), correct, points: Math.round(points * 10) / 10, total };';
           if (page.includes(oldResult)) page = page.replace(oldResult, newResult);
-
           fs.writeFileSync(pagePath, page);
 
           const config = fs.readFileSync('app/app-config.ts', 'utf8');
           if (!config.includes('APP_VERSION = "0.13.0"')) throw new Error('app-config version is not 0.13.0');
+
+          const testPath = 'tests/rendered-html.test.mjs';
+          let test = fs.readFileSync(testPath, 'utf8');
+          const oldReads = `  const [data, additional, page, packageJson] = await Promise.all([\n    readFile(new URL("../app/data.ts", import.meta.url), "utf8"),\n    readFile(new URL("../app/additional-questions.ts", import.meta.url), "utf8"),\n    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),\n    readFile(new URL("../package.json", import.meta.url), "utf8"),\n  ]);`;
+          const newReads = `  const [data, additional, page, packageJson, config] = await Promise.all([\n    readFile(new URL("../app/data.ts", import.meta.url), "utf8"),\n    readFile(new URL("../app/additional-questions.ts", import.meta.url), "utf8"),\n    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),\n    readFile(new URL("../package.json", import.meta.url), "utf8"),\n    readFile(new URL("../app/app-config.ts", import.meta.url), "utf8"),\n  ]);`;
+          if (test.includes(oldReads)) test = test.replace(oldReads, newReads);
+          const oldVersionAssertion = '  assert.match(page, /const APP_VERSION = "0\\.12\\.0"/);';
+          const newVersionAssertions = `  assert.match(config, /APP_VERSION = "0\\.13\\.0"/);\n  assert.doesNotMatch(page, /const APP_VERSION\\s*=/);\n  assert.match(packageJson, /"version": "0\\.13\\.0"/);`;
+          if (test.includes(oldVersionAssertion)) test = test.replace(oldVersionAssertion, newVersionAssertions);
+          if (test.includes('const APP_VERSION = "0\\.12\\.0"')) throw new Error('rendered-html test still expects local v0.12.0');
+          fs.writeFileSync(testPath, test);
           NODE
 
           npm version 0.13.0 --no-git-tag-version
@@ -87,6 +97,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/page.tsx package.json package-lock.json .release/v0.13.0-ready.txt
+          git add app/page.tsx tests/rendered-html.test.mjs package.json package-lock.json .release/v0.13.0-ready.txt
           git commit -m "Finalize validated v0.13.0 release"
           git push
