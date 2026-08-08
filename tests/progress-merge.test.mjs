@@ -3,8 +3,8 @@ import test from "node:test";
 import { mergeSyncDocument } from "../app/progress-merge.ts";
 import { initialProgress } from "../app/progress.ts";
 
-function document(progress, savedAt) {
-  return { schema: 1, savedAt, progress, activeExam: null };
+function document(progress, savedAt, activeExam = null) {
+  return { schema: 1, savedAt, progress, activeExam };
 }
 
 test("sync merge preserves older practice attempts when a mock overwrites the latest answer shape", () => {
@@ -41,4 +41,27 @@ test("sync merge keeps mock results from both snapshots without duplicates", () 
 
   const merged = mergeSyncDocument(remote, incoming);
   assert.deepEqual(merged.progress.mockHistory.map((item) => item.at), [second.at, first.at]);
+});
+
+test("an older device snapshot cannot replace newer non-answer progress or active exam state", () => {
+  const remoteExam = { order: ["Q1"], answers: { Q1: [0] }, index: 0, endsAt: 9999999999999 };
+  const remote = document({
+    ...initialProgress,
+    completedUnits: [1, 2],
+    bookmarks: ["Q1"],
+    review: ["Q2"],
+  }, "2026-08-08T12:00:00.000Z", remoteExam);
+  const staleIncoming = document({
+    ...initialProgress,
+    completedUnits: [1],
+    bookmarks: [],
+    review: [],
+  }, "2026-08-08T11:00:00.000Z", null);
+
+  const merged = mergeSyncDocument(remote, staleIncoming);
+  assert.equal(merged.savedAt, remote.savedAt);
+  assert.deepEqual(merged.progress.completedUnits, [1, 2]);
+  assert.deepEqual(merged.progress.bookmarks, ["Q1"]);
+  assert.deepEqual(merged.progress.review, ["Q2"]);
+  assert.deepEqual(merged.activeExam, remoteExam);
 });
