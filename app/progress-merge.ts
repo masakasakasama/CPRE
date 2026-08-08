@@ -48,12 +48,17 @@ function mergeMockHistory(remote: Progress["mockHistory"], incoming: Progress["m
     .slice(0, 20);
 }
 
+function newerDocument(remote: SyncDocument, incoming: SyncDocument) {
+  return new Date(incoming.savedAt).getTime() >= new Date(remote.savedAt).getTime() ? incoming : remote;
+}
+
 export function mergeSyncDocument(remote: SyncDocument | null, incoming: SyncDocument): SyncDocument {
   if (!remote) return incoming;
+  const latest = newerDocument(remote, incoming);
   return {
-    ...incoming,
+    ...latest,
     progress: {
-      ...incoming.progress,
+      ...latest.progress,
       answered: mergeAnswers(remote.progress.answered, incoming.progress.answered),
       mockHistory: mergeMockHistory(remote.progress.mockHistory, incoming.progress.mockHistory),
     },
