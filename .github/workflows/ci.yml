@@ -2,8 +2,19 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore:
+      - ".release/**"
   push:
     branches: [main]
+    paths-ignore:
+      - ".release/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpre-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
