@@ -25,15 +25,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <style>{`
-          .intro-brand > small,
-          .sidebar-foot > small { display: none !important; }
-          .main-content > footer > span { font-size: 0; }
-          .main-content > footer > span::after {
-            content: "Unofficial CPRE Foundation Level study tool. · v${APP_VERSION}";
-            font-size: 0.78rem;
-          }
-        `}</style>
         {children}
         <div
           aria-label={`Application version ${APP_VERSION}`}
