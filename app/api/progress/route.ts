@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 import { mergeSyncDocument } from "../../progress-merge";
-import { parseSyncDocument } from "../../progress";
+import { parseSyncDocument, type SyncDocument } from "../../progress";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +48,35 @@ async function readRemote(request: Request) {
   return { document, sha: payload.sha };
 }
 
+async function writeMergedRemote(request: Request, incoming: SyncDocument) {
+  const headers = githubHeaders(request);
+  if (!headers) throw new Error("sync_not_configured");
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const current = await readRemote(request);
+    const merged = mergeSyncDocument(current.document, incoming);
+    const body = {
+      message: `Save CPRE progress ${merged.savedAt}`,
+      content: Buffer.from(`${JSON.stringify(merged, null, 2)}\n`, "utf8").toString("base64"),
+      branch,
+      ...(current.sha ? { sha: current.sha } : {}),
+    };
+    const response = await fetch(`https://api.github.com/repos/${repository}/contents/${filePath}`, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (response.ok) {
+      const payload = await response.json() as { commit?: { sha?: string } };
+      return { merged, commit: payload.commit?.sha || null };
+    }
+    if (response.status === 409 && attempt === 0) continue;
+    throw new Error(`github_write_${response.status}`);
+  }
+
+  throw new Error("github_write_conflict");
+}
+
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "sync_failed";
   if (message === "sync_not_configured") return NextResponse.json({ error: message }, { status: 503 });
@@ -78,24 +107,8 @@ export async function PUT(request: Request) {
   if (!document) return NextResponse.json({ error: "invalid_progress" }, { status: 400 });
 
   try {
-    const headers = githubHeaders(request);
-    if (!headers) throw new Error("sync_not_configured");
-    const current = await readRemote(request);
-    const merged = mergeSyncDocument(current.document, document);
-    const body = {
-      message: `Save CPRE progress ${merged.savedAt}`,
-      content: Buffer.from(`${JSON.stringify(merged, null, 2)}\n`, "utf8").toString("base64"),
-      branch,
-      ...(current.sha ? { sha: current.sha } : {}),
-    };
-    const response = await fetch(`https://api.github.com/repos/${repository}/contents/${filePath}`, {
-      method: "PUT",
-      headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) throw new Error(`github_write_${response.status}`);
-    const payload = await response.json() as { commit?: { sha?: string } };
-    return NextResponse.json({ savedAt: merged.savedAt, commit: payload.commit?.sha || null });
+    const saved = await writeMergedRemote(request, document);
+    return NextResponse.json({ savedAt: saved.merged.savedAt, commit: saved.commit });
   } catch (error) {
     return errorResponse(error);
   }
