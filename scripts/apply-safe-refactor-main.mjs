@@ -52,12 +52,26 @@ page = page.replace(submitPattern, `  function submitExam(target: ActiveExam) {
   async function refreshSources() {`);
 writeFileSync(pagePath, page);
 
-for (const path of ["package.json", "package-lock.json"]) {
-  let source = readFileSync(path, "utf8");
-  if (!source.includes('"version": "0.12.0"')) throw new Error(`${path}: expected v0.12.0 metadata`);
-  source = source.replaceAll('"version": "0.12.0"', '"version": "0.13.0"');
-  writeFileSync(path, source);
+const packagePath = "package.json";
+const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
+if (packageJson.version !== "0.12.0") throw new Error(`package.json: expected v0.12.0, found ${packageJson.version}`);
+packageJson.version = "0.13.0";
+writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
+
+const lockPath = "package-lock.json";
+const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+if (lock.version !== "0.12.0" || lock.packages?.[""]?.version !== "0.12.0") {
+  throw new Error("package-lock.json: expected root v0.12.0 metadata");
 }
+lock.version = "0.13.0";
+lock.packages[""].version = "0.13.0";
+for (const key of ["node_modules/css-background-parser", "node_modules/yocto-queue"]) {
+  const entry = lock.packages?.[key];
+  if (!entry) throw new Error(`package-lock.json: missing ${key}`);
+  if (!String(entry.resolved || "").includes("-0.1.0.tgz")) throw new Error(`package-lock.json: unexpected resolved version for ${key}`);
+  entry.version = "0.1.0";
+}
+writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
 
 const readmePath = "README.md";
 let readme = readFileSync(readmePath, "utf8");
