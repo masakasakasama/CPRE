@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
+import { mergeSyncDocument } from "../../progress-merge";
 import { parseSyncDocument } from "../../progress";
 
 export const dynamic = "force-dynamic";
@@ -80,9 +81,10 @@ export async function PUT(request: Request) {
     const headers = githubHeaders(request);
     if (!headers) throw new Error("sync_not_configured");
     const current = await readRemote(request);
+    const merged = mergeSyncDocument(current.document, document);
     const body = {
-      message: `Save CPRE progress ${document.savedAt}`,
-      content: Buffer.from(`${JSON.stringify(document, null, 2)}\n`, "utf8").toString("base64"),
+      message: `Save CPRE progress ${merged.savedAt}`,
+      content: Buffer.from(`${JSON.stringify(merged, null, 2)}\n`, "utf8").toString("base64"),
       branch,
       ...(current.sha ? { sha: current.sha } : {}),
     };
@@ -93,7 +95,7 @@ export async function PUT(request: Request) {
     });
     if (!response.ok) throw new Error(`github_write_${response.status}`);
     const payload = await response.json() as { commit?: { sha?: string } };
-    return NextResponse.json({ savedAt: document.savedAt, commit: payload.commit?.sha || null });
+    return NextResponse.json({ savedAt: merged.savedAt, commit: payload.commit?.sha || null });
   } catch (error) {
     return errorResponse(error);
   }
