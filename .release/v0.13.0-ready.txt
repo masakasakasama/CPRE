@@ -1,0 +1,7 @@
+version=0.13.0
+source_commit=b951e4a3459ac88d8362f5830c1e8381aedd05fb
+validated_at=2026-08-08T13:09:48Z
+npm_ci=passed
+lint=passed
+content_validate=passed
+test_and_build=passed

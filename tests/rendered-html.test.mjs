@@ -24,11 +24,12 @@ test("server-renders the CPRE study application shell", async () => {
 });
 
 test("contains a full practice bank and no starter dependency", async () => {
-  const [data, additional, page, packageJson] = await Promise.all([
+  const [data, additional, page, packageJson, config] = await Promise.all([
     readFile(new URL("../app/data.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/additional-questions.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../app/app-config.ts", import.meta.url), "utf8"),
   ]);
   const ids = data.match(/id: "Q\d{3}"/g) ?? [];
   assert.equal(ids.length, 45);
@@ -36,7 +37,9 @@ test("contains a full practice bank and no starter dependency", async () => {
   assert.match(page, /questions\.length/);
   assert.match(page, /75 \* 60 \* 1000/);
   assert.match(page, /前回の続き/);
-  assert.match(page, /const APP_VERSION = "0\.12\.0"/);
+  assert.match(config, /APP_VERSION = "0\.13\.0"/);
+  assert.doesNotMatch(page, /const APP_VERSION\s*=/);
+  assert.match(packageJson, /"version": "0\.13\.0"/);
   assert.match(page, /calculatePassEstimate/);
   assert.match(page, /GITHUB_TOKEN_STORAGE/);
   assert.match(page, /scrollIntoView\(\{ block: "start", behavior: "auto" \}\)/);

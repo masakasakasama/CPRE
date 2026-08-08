@@ -5,6 +5,7 @@ import { questions, sources, units, type Question } from "./data";
 import { selectMockExamQuestions } from "./exam";
 import { calculateNextReview, calculatePassEstimate, calculateReadiness, calculateSchedule, getAnswerStats, getLastLearningActivity, initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt, type ActiveExam, type Confidence, type LastLearningActivity, type MockResult, type Progress } from "./progress";
 import { studyGuides } from "./study";
+import { APP_VERSION, EXAM_KEY, GITHUB_TOKEN_STORAGE, INTRO_KEY, LOCAL_SAVED_AT_KEY, STORAGE_KEY, SYNC_KEY_STORAGE } from "./app-config";
 
 type View = "home" | "learn" | "practice" | "exam" | "review" | "sources";
 type SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";
@@ -13,14 +14,6 @@ type PracticeUndo = {
   selected: number[];
   previousAnswer?: Progress["answered"][string];
 };
-
-const STORAGE_KEY = "cpre-english-study:v1";
-const EXAM_KEY = "cpre-english-study:exam:v1";
-const INTRO_KEY = "cpre-english-study:intro:v1";
-const LOCAL_SAVED_AT_KEY = "cpre-english-study:saved-at:v1";
-const SYNC_KEY_STORAGE = "cpre-english-study:sync-key";
-const GITHUB_TOKEN_STORAGE = "cpre-english-study:github-token";
-const APP_VERSION = "0.12.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -420,6 +413,7 @@ export default function Home() {
     let total = 0;
     const wrong: string[] = [];
     const nextAnswered = { ...progress.answered };
+    const submittedAt = new Date().toISOString();
     for (const id of target.order) {
       const question = questions.find((candidate) => candidate.id === id);
       if (!question) continue;
@@ -429,9 +423,15 @@ export default function Home() {
       total += question.points;
       if (exact) correct += 1;
       else wrong.push(question.id);
-      nextAnswered[question.id] = { selected, correct: exact, lastAt: new Date().toISOString() };
+      const previous = nextAnswered[question.id];
+      nextAnswered[question.id] = {
+        selected,
+        correct: exact,
+        lastAt: submittedAt,
+        attempts: [...(previous?.attempts ?? []), { selected, correct: exact, at: submittedAt }].slice(-50),
+      };
     }
-    const result: MockResult = { at: new Date().toISOString(), percent: Math.round((points / total) * 100), correct, points: Math.round(points * 10) / 10, total };
+    const result: MockResult = { at: submittedAt, percent: Math.round((points / total) * 100), correct, points: Math.round(points * 10) / 10, total };
     setProgress((current) => ({
       ...current,
       answered: nextAnswered,
