@@ -98,7 +98,7 @@ export async function PUT(request: Request) {
   const declaredLength = Number(request.headers.get("content-length") || 0);
   if (declaredLength > 250_000) return NextResponse.json({ error: "payload_too_large" }, { status: 413 });
 
-  let document;
+  let document: SyncDocument | null;
   try {
     document = parseSyncDocument(await request.json());
   } catch {
