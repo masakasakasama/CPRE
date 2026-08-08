@@ -1,0 +1,36 @@
+name: Show app version
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/show-app-version.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Add visible app version
+        run: node scripts/show-app-version.mjs
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run content:validate
+      - name: Commit version display
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx package.json package-lock.json
+          git commit -m "Show v0.12.0 on the web app"
+          git push
