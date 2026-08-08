@@ -1,0 +1,84 @@
+name: Diagnose v0.13.0 finalizer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .release/diagnose-v013-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Run diagnostics
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .release
+          : > /tmp/diag.log
+
+          node <<'NODE' >> /tmp/diag.log 2>&1
+          const fs = require('node:fs');
+          const pagePath = 'app/page.tsx';
+          let page = fs.readFileSync(pagePath, 'utf8');
+          const studyImport = 'import { studyGuides } from "./study";';
+          const configImport = 'import { APP_VERSION, EXAM_KEY, GITHUB_TOKEN_STORAGE, INTRO_KEY, LOCAL_SAVED_AT_KEY, STORAGE_KEY, SYNC_KEY_STORAGE } from "./app-config";';
+          if (!page.includes(configImport)) {
+            if (!page.includes(studyImport)) throw new Error('page.tsx study import anchor missing');
+            page = page.replace(studyImport, `${studyImport}\n${configImport}`);
+          }
+          const legacyConstants = `const STORAGE_KEY = "cpre-english-study:v1";\nconst EXAM_KEY = "cpre-english-study:exam:v1";\nconst INTRO_KEY = "cpre-english-study:intro:v1";\nconst LOCAL_SAVED_AT_KEY = "cpre-english-study:saved-at:v1";\nconst SYNC_KEY_STORAGE = "cpre-english-study:sync-key";\nconst GITHUB_TOKEN_STORAGE = "cpre-english-study:github-token";\nconst APP_VERSION = "0.12.0";\n\n`;
+          if (page.includes(legacyConstants)) page = page.replace(legacyConstants, '');
+          if (/const APP_VERSION\s*=/.test(page)) throw new Error('page.tsx still has local APP_VERSION');
+          const answeredAnchor = '    const nextAnswered = { ...progress.answered };\n';
+          if (!page.includes('const submittedAt = new Date().toISOString();')) {
+            if (!page.includes(answeredAnchor)) throw new Error('submitExam answered anchor missing');
+            page = page.replace(answeredAnchor, `${answeredAnchor}    const submittedAt = new Date().toISOString();\n`);
+          }
+          const oldOverwrite = '      nextAnswered[question.id] = { selected, correct: exact, lastAt: new Date().toISOString() };';
+          const preservedHistory = `      const previous = nextAnswered[question.id];\n      nextAnswered[question.id] = {\n        selected,\n        correct: exact,\n        lastAt: submittedAt,\n        attempts: [...(previous?.attempts ?? []), { selected, correct: exact, at: submittedAt }].slice(-50),\n      };`;
+          if (page.includes(oldOverwrite)) page = page.replace(oldOverwrite, preservedHistory);
+          const oldResult = '    const result: MockResult = { at: new Date().toISOString(), percent: Math.round((points / total) * 100), correct, points: Math.round(points * 10) / 10, total };';
+          if (page.includes(oldResult)) page = page.replace(oldResult, '    const result: MockResult = { at: submittedAt, percent: Math.round((points / total) * 100), correct, points: Math.round(points * 10) / 10, total };');
+          fs.writeFileSync(pagePath, page);
+          NODE
+          NODE_RC=$?
+
+          npm version 0.13.0 --no-git-tag-version >> /tmp/diag.log 2>&1
+          VERSION_RC=$?
+          npm ci --ignore-scripts >> /tmp/diag.log 2>&1
+          CI_RC=$?
+          if [ "$CI_RC" -eq 0 ]; then npm run lint >> /tmp/diag.log 2>&1; LINT_RC=$?; else LINT_RC=99; fi
+          if [ "$CI_RC" -eq 0 ]; then npm run content:validate >> /tmp/diag.log 2>&1; CONTENT_RC=$?; else CONTENT_RC=99; fi
+          if [ "$CI_RC" -eq 0 ]; then npm run test >> /tmp/diag.log 2>&1; TEST_RC=$?; else TEST_RC=99; fi
+
+          {
+            echo "node_refactor=$NODE_RC"
+            echo "npm_version=$VERSION_RC"
+            echo "npm_ci=$CI_RC"
+            echo "lint=$LINT_RC"
+            echo "content_validate=$CONTENT_RC"
+            echo "test=$TEST_RC"
+            echo "--- diff names ---"
+            git diff --name-only
+            echo "--- log tail ---"
+            tail -n 120 /tmp/diag.log
+          } > .release/v0.13.0-finalize-diagnostic.txt
+
+      - name: Persist diagnostics
+        if: always()
+        run: |
+          git restore app/page.tsx package.json package-lock.json || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .release/v0.13.0-finalize-diagnostic.txt
+          git commit -m "Record v0.13.0 finalizer diagnostics" || true
+          git push
