@@ -24,7 +24,7 @@ test("server-renders the CPRE study application shell", async () => {
 });
 
 test("contains a full practice bank and no starter dependency", async () => {
-  const [data, additional, page, packageJson, config] = await Promise.all([
+  const [data, additional, page, packageJsonText, appConfig] = await Promise.all([
     readFile(new URL("../app/data.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/additional-questions.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
@@ -32,14 +32,19 @@ test("contains a full practice bank and no starter dependency", async () => {
     readFile(new URL("../app/app-config.ts", import.meta.url), "utf8"),
   ]);
   const ids = data.match(/id: "Q\d{3}"/g) ?? [];
+  const packageJson = JSON.parse(packageJsonText);
+  const versionMatch = appConfig.match(/export const APP_VERSION = "([^"]+)"/);
+
   assert.equal(ids.length, 45);
   assert.match(additional, /EO 7\.2\.1/);
   assert.match(page, /questions\.length/);
   assert.match(page, /75 \* 60 \* 1000/);
   assert.match(page, /前回の続き/);
-  assert.match(config, /APP_VERSION = "0\.13\.0"/);
+  assert.match(page, /APP_VERSION.*from "\.\/app-config"/);
   assert.doesNotMatch(page, /const APP_VERSION\s*=/);
-  assert.match(packageJson, /"version": "0\.13\.0"/);
+  assert.ok(versionMatch, "app-config must expose APP_VERSION");
+  assert.equal(versionMatch[1], packageJson.version, "displayed app version must match package.json");
+  assert.match(versionMatch[1], /^\d+\.\d+\.\d+$/);
   assert.match(page, /calculatePassEstimate/);
   assert.match(page, /GITHUB_TOKEN_STORAGE/);
   assert.match(page, /scrollIntoView\(\{ block: "start", behavior: "auto" \}\)/);
@@ -48,6 +53,6 @@ test("contains a full practice bank and no starter dependency", async () => {
   assert.match(page, /不正解として記録済み · 1日後にもう一度出す/);
   assert.match(page, /あなたの回答/);
   assert.match(page, /直前の問題に戻る/);
-  assert.doesNotMatch(packageJson, /react-loading-skeleton/);
+  assert.doesNotMatch(packageJsonText, /react-loading-skeleton/);
   assert.doesNotMatch(page, /_sites-preview|SkeletonPreview/);
 });
