@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { APP_VERSION } from "./app-config";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -15,7 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
     description,
     applicationName: "CPRE English Study",
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
-    openGraph: { title: "CPRE English Study", description, type: "website", images: [{ url: imageUrl, width: 1536, height: 1024, alt: "CPRE English Study — 45 questions, 75 minutes" }] },
+    openGraph: { title: "CPRE English Study", description, type: "website", images: [{ url: imageUrl, width: 1536, height: 1024, alt: "CPRE English Study — 185-question bank and 75-minute mock exam" }] },
     twitter: { card: "summary_large_image", title: "CPRE English Study", description, images: [imageUrl] },
   };
 }
@@ -23,7 +24,39 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <style>{`
+          .intro-brand > small,
+          .sidebar-foot > small { display: none !important; }
+          .main-content > footer > span { font-size: 0; }
+          .main-content > footer > span::after {
+            content: "Unofficial CPRE Foundation Level study tool. · v${APP_VERSION}";
+            font-size: 0.78rem;
+          }
+        `}</style>
+        {children}
+        <div
+          aria-label={`Application version ${APP_VERSION}`}
+          style={{
+            position: "fixed",
+            top: 10,
+            right: 12,
+            zIndex: 1000,
+            padding: "4px 8px",
+            borderRadius: 999,
+            background: "rgba(12, 18, 28, 0.82)",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            color: "rgba(255, 255, 255, 0.72)",
+            fontSize: 11,
+            lineHeight: 1.2,
+            letterSpacing: "0.04em",
+            pointerEvents: "none",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          v{APP_VERSION}
+        </div>
+      </body>
     </html>
   );
 }
