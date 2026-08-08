@@ -1,0 +1,131 @@
+node_refactor=0
+npm_version=0
+npm_ci=0
+lint=0
+content_validate=0
+test=1
+--- diff names ---
+app/page.tsx
+package-lock.json
+package.json
+--- log tail ---
+    '        return (\n' +
+    '          <label className={`choice ${checked ? "selected" : ""} ${resultClass}`} key={option}>\n' +
+    '            <input\n' +
+    '              type={multi ? "checkbox" : "radio"}\n' +
+    '              name={question.id}\n' +
+    '              checked={checked}\n' +
+    '              disabled={disabled}\n' +
+    '              onChange={() => {\n' +
+    '                if (multi) onChange(checked ? selected.filter((item) => item !== index) : [...selected, index]);\n' +
+    '                else onChange([index]);\n' +
+    '              }}\n' +
+    '            />\n' +
+    '            <span className="choice-key">{String.fromCharCode(65 + index)}</span>\n' +
+    '            <span className="choice-text">{option}</span>\n' +
+    '            {showResult && correct && <span className="choice-result correct-result" lang="ja">正解</span>}\n' +
+    '            {showResult && checked && !correct && <span className="choice-result wrong-result" lang="ja">あなたの回答</span>}\n' +
+    '          </label>\n' +
+    '        );\n' +
+    '      })}\n' +
+    '    </div>\n' +
+    '  );\n' +
+    '}\n' +
+    '\n' +
+    'export default function Home() {\n' +
+    '  const [view, setView] = useState<View>("home");\n' +
+    '  const [showIntro, setShowIntro] = useState(() => typeof window === "undefined" || localStorage.getItem(INTRO_KEY) !== "done");\n' +
+    '  const [selectedStudyUnit, setSelectedStudyUnit] = useState<number | null>(null);\n' +
+    '  const [progress, setProgress] = useState<Progress>(initialProgress);\n' +
+    '  const [hydrated, setHydrated] = useState(false);\n' +
+    '  const [practiceQuestionId, setPracticeQuestionId] = useState(questions[0]?.id ?? "");\n' +
+    '  const [practiceSelected, setPracticeSelected] = useState<number[]>([]);\n' +
+    '  const [practiceChecked, setPracticeChecked] = useState(false);\n' +
+    '  const [practiceUndo, setPracticeUndo] = useState<PracticeUndo | null>(null);\n' +
+    '  const [practiceUnit, setPracticeUnit] = useState<number | "all">("all");\n' +
+    '  const [exam, setExam] = useState<ActiveExam | null>(null);\n' +
+    '  const [examResult, setExamResult] = useState<MockResult | null>(null);\n' +
+    '  const [now, setNow] = useState(Date.now());\n' +
+    '  const [sourceStatus, setSourceStatus] = useState<"idle" | "checking" | "online" | "cached">("idle");\n' +
+    '  const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");\n' +
+    '  const [syncKey, setSyncKey] = useState("");\n' +
+    '  const [githubToken, setGithubToken] = useState("");\n' +
+    '  const [remoteReady, setRemoteReady] = useState(false);\n' +
+    '  const [toast, setToast] = useState("");\n' +
+    '  const lastSynced = useRef("");\n' +
+    '  const practiceCardRef = useRef<HTMLElement | null>(null);\n' +
+    '  const practiceFeedbackRef = useRef<HTMLDivElement | null>(null);\n' +
+    '\n' +
+    '  function syncHeaders(key = syncKey, token = githubToken): Record<string, string> {\n' +
+    '    return {\n' +
+    '      ...(key ? { "x-cpre-sync-key": key } : {}),\n' +
+    '      ...(token ? { "x-cpre-github-token": token } : {}),\n' +
+    '    };\n' +
+    '  }\n' +
+    '\n' +
+    '  async function saveRemote(nextProgress = progress, nextExam = exam, key = syncKey, token = githubToken) {\n' +
+    '    const document = makeSyncDocument(nextProgress, nextExam);\n' +
+    '    const serialized = JSON.stringify({ progress: document.progress, activeExam: document.activeExam });\n' +
+    '    if (serialized === lastSynced.current) return true;\n' +
+    '    setSyncStatus("saving");\n' +
+    '    try {\n' +
+    '      const response = await fetch("/api/progress", {\n' +
+    '        method: "PUT",\n' +
+    '        headers: { "Content-Type": "application/json", ...syncHeaders(key, token) },\n' +
+    '        body: JSON.stringify(document),\n' +
+    '      });\n' +
+    '      if (response.status === 401 || response.status === 503) {\n' +
+    '        setSyncStatus("setup");\n' +
+    '        return false;\n' +
+    '      }\n' +
+    '      if (!response.ok) throw new Error("sync_failed");\n' +
+    '      lastSynced.current = serialized;\n' +
+    '      setSyncStatus("synced");\n' +
+    '      return true;\n' +
+    '    } catch {\n' +
+    '      setSyncStatus("offline");\n' +
+    '      return false;\n' +
+    '    }\n' +
+    '  }\n' +
+    '\n' +
+    '  useEffect(() => {\n' +
+    '    let cancelled = false;\n' +
+    '    try {\n' +
+    '      const shared = new URLSearchParams(window.location.search).get("share");\n' +
+    '      const cachedSyncKey = localStorage.getItem(SYNC_KEY_STORAGE) || "";\n' +
+    '      const cachedGithubToken = localStorage.getItem(GITHUB_TOKEN_STORAGE) || "";\n' +
+    '      const cachedSavedAt = localStorage.getItem(LOCAL_SAVED_AT_KEY) || "";\n' +
+    '      // Restore the external browser cache before the first interactive render.\n' +
+    '      // eslint-disable-next-line react-hooks/set-state-in-effect\n' +
+    '      if (cachedSyncKey) setSyncKey(cachedSyncKey);\n' +
+    '      if (cachedGithubToken) setGithubToken(cachedGithubToken);\n' +
+    '      const stored = localStorage.getItem(STORAGE_KEY);\n' +
+    '      const decoded = shared ? parseProgress(JSON.parse(decodeURIComponent(escape(atob(shared.replace(/-/g, "+").replace(/_/g, "/")))))) : null;\n' +
+    '      const cached = stored ? parseProgress(JSON.parse(stored)) : null;\n' +
+    '      const next = decoded || cached || initialProgress;\n' +
+    '      const storedExam = localStorage.getItem(EXAM_KEY);\n' +
+    '      let nextExam: ActiveExam | null = null;\n' +
+    '      if (storedExam) {\n' +
+    '        const parsed = parseActiveExam(JSON.parse(storedExam));\n' +
+    '        if (parsed && parsed.endsAt > Date.now()) nextExam = parsed;\n' +
+    '        else localStorage.removeItem(EXAM_KEY);\n' +
+    '      }\n' +
+    '      setProgress(next);\n' +
+    '      if (nextExam) setExam(nextExam);\n' +
+    '      const restore = async () => {\n' +
+    '        setSyncStatus("loading");\n' +
+    '        try {\n' +
+    '          const response = await fetch("/api/progress", { headers: syncHeaders(cachedSyncKey, cachedGithubToken), cache: "no-store" });\n' +
+    '          if (response.status === 401 || response.status === 503) {\n' +
+    '            if (!cancelled) setSyncStatus("setup")'... 48095 more characters
+  
+      at TestContext.<anonymous> (file:///home/runner/work/CPRE/CPRE/tests/rendered-html.test.mjs:39:10)
+      at async Test.run (node:internal/test_runner/test:1332:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:911:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '"use client";\n\nimport { useEffect, useMemo, useRef, useState } from "react";\nimport { questions, sources, units, type Question } from "./data";\nimport { selectMockExamQuestions } from "./exam";\nimport { calculateNextReview, calculatePassEstimate, calculateReadiness, calculateSchedule, getAnswerStats, getLastLearningActivity, initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt, type ActiveExam, type Confidence, type LastLearningActivity, type MockResult, type Progress } from "./progress";\nimport { studyGuides } from "./study";\nimport { APP_VERSION, EXAM_KEY, GITHUB_TOKEN_STORAGE, INTRO_KEY, LOCAL_SAVED_AT_KEY, STORAGE_KEY, SYNC_KEY_STORAGE } from "./app-config";\n\ntype View = "home" | "learn" | "practice" | "exam" | "review" | "sources";\ntype SyncStatus = "loading" | "synced" | "saving" | "offline" | "setup";\ntype PracticeUndo = {\n  questionId: string;\n  selected: number[];\n  previousAnswer?: Progress["answered"][string];\n};\n\nconst navItems: { id: View; label: string; short: string }[] = [\n  { id: "home", label: "Overview", short: "Home" },\n  { id: "learn", label: "Study guides", short: "Study" },\n  { id: "practice", label: "Quick test", short: "Test" },\n  { id: "exam", label: "Mock exam", short: "Exam" },\n  { id: "review", label: "Review", short: "Review" },\n];\n\nfunction sameAnswer(a: number[], b: number[]) {\n  return a.length === b.length && [...a].sort().every((value, index) => value === [...b].sort()[index]);\n}\n\nfunction formatTimer(totalSeconds: number) {\n  const safe = Math.max(0, totalSeconds);\n  const minutes = Math.floor(safe / 60);\n  const seconds = safe % 60;\n  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;\n}\n\nfunction localDateInput(date = new Date()) {\n  const year = date.getFullYear();\n  const month = String(date.getMonth() + 1).padStart(2, "0");\n  const day = String(date.getDate()).padStart(2, "0");\n  return `${year}-${month}-${day}`;\n}\n\nfunction formatChecked(value?: string) {\n  if (!value) return "Not checked yet";\n  return `Last checked ${new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value))}`;\n}\n\nfunction formatAttemptDate(value: string) {\n  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));\n}\n\nfunction formatResumeDate(value: string) {\n  return new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));\n}\n\nfunction latestProgressTimestamp(progress: Progress) {\n  const timestamps = [\n    progress.lastActivity?.at,\n    progress.planStartedAt,\n    ...progress.mockHistory.map((result) => result.at),\n    ...Object.values(progress.answered).map((answer) => answer.lastAt),\n  ].filter((value): value is string => Boolean(value));\n  return timestamps.reduce((latest, value) => Math.max(latest, new Date(value).getTime() || 0), 0);\n}\n\nfunction hasLearningData(progress: Progress) {\n  return Object.keys(progress.answered).length > 0\n    || progress.completedUnits.length > 0\n    || progress.mockHistory.length > 0\n    || progress.bookmarks.length > 0;\n}\n\nfunction shouldUseRemote(local: Progress, remoteSavedAt: string, localSavedAt: string) {\n  if (hasLearningData(local) && !localSavedAt) {\n    return new Date(remoteSavedAt).getTime() > latestProgressTimestamp(local);\n  }\n  return new Date(remoteSavedAt).getTime() > new Date(localSavedAt || 0).getTime();\n}\n\nfunction questionScore(question: Question, selected: number[]) {\n  if (selected.length > question.correct.length) return 0;\n  if (question.kind !== "multiple") return sameAnswer(selected, question.correct) ? question.points : 0;\n  const hits = selected.filter((option) => question.correct.includes(option)).length;\n  return (hits / question.correct.length) * question.points;\n}\n\nfunction formatAnswerOptions(question: Question, indexes: number[]) {\n  return indexes.map((index) => `${String.fromCharCode(65 + index)} · ${question.options[index]}`).join(" / ");\n}\n\nfunction ChoiceList({ question, selected, onChange, disabled = false, showResult = false }: { question: Question; selected: number[]; onChange: (value: number[]) => void; disabled?: boolean; showResult?: boolean }) {\n  const multi = question.kind === "multiple";\n  return (\n    <div className="choices" role={multi ? "group" : "radiogroup"} aria-label="Answer choices">\n      {question.options.map((option, index) => {\n        const checked = selected.includes(index);\n        const correct = question.correct.includes(index);\n        const resultClass = showResult && correct ? "answer-correct" : showResult && checked ? "answer-wrong" : "";\n        return (\n          <label className={`choice ${checked ? "selected" : ""} ${resultClass}`} key={option}>\n            <input\n              type={multi ? "checkbox" : "radio"}\n              name={question.id}\n              checked={checked}\n              disabled={disabled}\n              onChange={() => {\n                if (multi) onChange(checked ? selected.filter((item) => item !== index) : [...selected, index]);\n                else onChange([index]);\n              }}\n            />\n            <span className="choice-key">{String.fromCharCode(65 + index)}</span>\n            <span className="choice-text">{option}</span>\n            {showResult && correct && <span className="choice-result correct-result" lang="ja">正解</span>}\n            {showResult && checked && !correct && <span className="choice-result wrong-result" lang="ja">あなたの回答</span>}\n          </label>\n        );\n      })}\n    </div>\n  );\n}\n\nexport default function Home() {\n  const [view, setView] = useState<View>("home");\n  const [showIntro, setShowIntro] = useState(() => typeof window === "undefined" || localStorage.getItem(INTRO_KEY) !== "done");\n  const [selectedStudyUnit, setSelectedStudyUnit] = useState<number | null>(null);\n  const [progress, setProgress] = useState<Progress>(initialProgress);\n  const [hydrated, setHydrated] = useState(false);\n  const [practiceQuestionId, setPracticeQuestionId] = useState(questions[0]?.id ?? "");\n  const [practiceSelected, setPracticeSelected] = useState<number[]>([]);\n  const [practiceChecked, setPracticeChecked] = useState(false);\n  const [practiceUndo, setPracticeUndo] = useState<PracticeUndo | null>(null);\n  const [practiceUnit, setPracticeUnit] = useState<number | "all">("all");\n  const [exam, setExam] = useState<ActiveExam | null>(null);\n  const [examResult, setExamResult] = useState<MockResult | null>(null);\n  const [now, setNow] = useState(Date.now());\n  const [sourceStatus, setSourceStatus] = useState<"idle" | "checking" | "online" | "cached">("idle");\n  const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");\n  const [syncKey, setSyncKey] = useState("");\n  const [githubToken, setGithubToken] = useState("");\n  const [remoteReady, setRemoteReady] = useState(false);\n  const [toast, setToast] = useState("");\n  const lastSynced = useRef("");\n  const practiceCardRef = useRef<HTMLElement | null>(null);\n  const practiceFeedbackRef = useRef<HTMLDivElement | null>(null);\n\n  function syncHeaders(key = syncKey, token = githubToken): Record<string, string> {\n    return {\n      ...(key ? { "x-cpre-sync-key": key } : {}),\n      ...(token ? { "x-cpre-github-token": token } : {}),\n    };\n  }\n\n  async function saveRemote(nextProgress = progress, nextExam = exam, key = syncKey, token = githubToken) {\n    const document = makeSyncDocument(nextProgress, nextExam);\n    const serialized = JSON.stringify({ progress: document.progress, activeExam: document.activeExam });\n    if (serialized === lastSynced.current) return true;\n    setSyncStatus("saving");\n    try {\n      const response = await fetch("/api/progress", {\n        method: "PUT",\n        headers: { "Content-Type": "application/json", ...syncHeaders(key, token) },\n        body: JSON.stringify(document),\n      });\n      if (response.status === 401 || response.status === 503) {\n        setSyncStatus("setup");\n        return false;\n      }\n      if (!response.ok) throw new Error("sync_failed");\n      lastSynced.current = serialized;\n      setSyncStatus("synced");\n      return true;\n    } catch {\n      setSyncStatus("offline");\n      return false;\n    }\n  }\n\n  useEffect(() => {\n    let cancelled = false;\n    try {\n      const shared = new URLSearchParams(window.location.search).get("share");\n      const cachedSyncKey = localStorage.getItem(SYNC_KEY_STORAGE) || "";\n      const cachedGithubToken = localStorage.getItem(GITHUB_TOKEN_STORAGE) || "";\n      const cachedSavedAt = localStorage.getItem(LOCAL_SAVED_AT_KEY) || "";\n      // Restore the external browser cache before the first interactive render.\n      // eslint-disable-next-line react-hooks/set-state-in-effect\n      if (cachedSyncKey) setSyncKey(cachedSyncKey);\n      if (cachedGithubToken) setGithubToken(cachedGithubToken);\n      const stored = localStorage.getItem(STORAGE_KEY);\n      const decoded = shared ? parseProgress(JSON.parse(decodeURIComponent(escape(atob(shared.replace(/-/g, "+").replace(/_/g, "/")))))) : null;\n      const cached = stored ? parseProgress(JSON.parse(stored)) : null;\n      const next = decoded || cached || initialProgress;\n      const storedExam = localStorage.getItem(EXAM_KEY);\n      let nextExam: ActiveExam | null = null;\n      if (storedExam) {\n        const parsed = parseActiveExam(JSON.parse(storedExam));\n        if (parsed && parsed.endsAt > Date.now()) nextExam = parsed;\n        else localStorage.removeItem(EXAM_KEY);\n      }\n      setProgress(next);\n      if (nextExam) setExam(nextExam);\n      const restore = async () => {\n        setSyncStatus("loading");\n        try {\n          const response = await fetch("/api/progress", { headers: syncHeaders(cachedSyncKey, cachedGithubToken), cache: "no-store" });\n          if (response.status === 401 || response.status === 503) {\n            if (!cancelled) setSyncStatus("setup")'... 48095 more characters,
+    expected: /const APP_VERSION = "0\.12\.0"/,
+    operator: 'match',
+    diff: 'simple'
+  }
