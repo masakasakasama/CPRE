@@ -18,7 +18,7 @@ for (const source of manifest.sources.filter((item: { enabled: boolean; usage: s
     pages.push({ page: pageNumber, text });
   }
   const fullText = pages.map((page) => page.text).join("\n");
-  const educationalObjectives = Array.from(fullText.matchAll(/EO\s+(\d+\.\d+\.\d+)\s+(.{1,180}?)(?=\s+\(L[123]\))/g), (match) => ({ id: `EO ${match[1]}`, label: match[2].trim() }));
+  const educationalObjectives = Array.from(fullText.matchAll(/EO\s+(\d+\.\d+\.\d+)\s+(.{1,500}?)(?=\s+\(L[123]\))/g), (match) => ({ id: `EO ${match[1]}`, label: match[2].trim() }));
   const chapters = Array.from(fullText.matchAll(/(?:^|\s)([1-7])\s+([A-Z][A-Za-z ,&@-]{8,80}?)\s+\(L[123]\)/g), (match) => ({ id: Number(match[1]), title: match[2].trim() }));
   const terms = Array.from(fullText.matchAll(/Terms:\s*(.{1,500}?)(?=Educational objectives|EO\s+\d)/g), (match) => match[1].split(/,|;/).map((term) => term.trim()).filter(Boolean)).flat();
   const output = join(root, "data", "extracted", source.id, source.sha256, "structure.json");

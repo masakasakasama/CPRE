@@ -28,7 +28,7 @@ if (questions.length < 180) errors.push(`Expected at least 180 questions, found 
 if (studyGuides.length !== 7 || new Set(studyGuides.map((guide: { unit: number }) => guide.unit)).size !== 7) errors.push("Expected one study guide for each of the seven units");
 for (const guide of studyGuides) {
   if (guide.diagram.length < 3 || guide.points.length < 3 || guide.terms.length < 4) errors.push(`EU ${guide.unit}: study guide is incomplete`);
-  if (!/Syllabus 3\.3\.0/.test(guide.source) || !/Handbook 1\.3\.1/.test(guide.source)) errors.push(`EU ${guide.unit}: study guide source is not pinned`);
+  if (!/Syllabus 3\.3\.0/.test(guide.source) || !/Handbook 1\.3\.2/.test(guide.source)) errors.push(`EU ${guide.unit}: study guide source is not pinned`);
 }
 if (new Set(questions.map((question: { id: string }) => question.id)).size !== questions.length) errors.push("Question IDs must be unique");
 if (new Set(questions.map((question: { prompt: string }) => question.prompt)).size !== questions.length) errors.push("Question prompts must be unique");

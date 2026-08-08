@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { questions, sources, units, type Question } from "./data";
 import { selectMockExamQuestions } from "./exam";
-import { calculateNextReview, calculateReadiness, calculateSchedule, getAnswerStats, getLastLearningActivity, initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt, type ActiveExam, type Confidence, type LastLearningActivity, type MockResult, type Progress } from "./progress";
+import { calculateNextReview, calculatePassEstimate, calculateReadiness, calculateSchedule, getAnswerStats, getLastLearningActivity, initialProgress, makeSyncDocument, parseActiveExam, parseProgress, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt, type ActiveExam, type Confidence, type LastLearningActivity, type MockResult, type Progress } from "./progress";
 import { studyGuides } from "./study";
 
 type View = "home" | "learn" | "practice" | "exam" | "review" | "sources";
@@ -17,7 +17,10 @@ type PracticeUndo = {
 const STORAGE_KEY = "cpre-english-study:v1";
 const EXAM_KEY = "cpre-english-study:exam:v1";
 const INTRO_KEY = "cpre-english-study:intro:v1";
-const APP_VERSION = "0.11.0";
+const LOCAL_SAVED_AT_KEY = "cpre-english-study:saved-at:v1";
+const SYNC_KEY_STORAGE = "cpre-english-study:sync-key";
+const GITHUB_TOKEN_STORAGE = "cpre-english-study:github-token";
+const APP_VERSION = "0.12.0";
 
 const navItems: { id: View; label: string; short: string }[] = [
   { id: "home", label: "Overview", short: "Home" },
@@ -56,6 +59,30 @@ function formatAttemptDate(value: string) {
 
 function formatResumeDate(value: string) {
   return new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function latestProgressTimestamp(progress: Progress) {
+  const timestamps = [
+    progress.lastActivity?.at,
+    progress.planStartedAt,
+    ...progress.mockHistory.map((result) => result.at),
+    ...Object.values(progress.answered).map((answer) => answer.lastAt),
+  ].filter((value): value is string => Boolean(value));
+  return timestamps.reduce((latest, value) => Math.max(latest, new Date(value).getTime() || 0), 0);
+}
+
+function hasLearningData(progress: Progress) {
+  return Object.keys(progress.answered).length > 0
+    || progress.completedUnits.length > 0
+    || progress.mockHistory.length > 0
+    || progress.bookmarks.length > 0;
+}
+
+function shouldUseRemote(local: Progress, remoteSavedAt: string, localSavedAt: string) {
+  if (hasLearningData(local) && !localSavedAt) {
+    return new Date(remoteSavedAt).getTime() > latestProgressTimestamp(local);
+  }
+  return new Date(remoteSavedAt).getTime() > new Date(localSavedAt || 0).getTime();
 }
 
 function questionScore(question: Question, selected: number[]) {
@@ -160,8 +187,9 @@ export default function Home() {
     let cancelled = false;
     try {
       const shared = new URLSearchParams(window.location.search).get("share");
-      const cachedSyncKey = sessionStorage.getItem("cpre-english-study:sync-key") || "";
-      const cachedGithubToken = sessionStorage.getItem("cpre-english-study:github-token") || "";
+      const cachedSyncKey = localStorage.getItem(SYNC_KEY_STORAGE) || "";
+      const cachedGithubToken = localStorage.getItem(GITHUB_TOKEN_STORAGE) || "";
+      const cachedSavedAt = localStorage.getItem(LOCAL_SAVED_AT_KEY) || "";
       // Restore the external browser cache before the first interactive render.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (cachedSyncKey) setSyncKey(cachedSyncKey);
@@ -190,10 +218,11 @@ export default function Home() {
           if (!response.ok) throw new Error("sync_failed");
           const payload = await response.json() as { exists?: boolean; document?: unknown };
           const remote = parseSyncDocument(payload.document);
-          if (!cancelled && payload.exists && remote && !decoded) {
+          if (!cancelled && payload.exists && remote && !decoded && shouldUseRemote(next, remote.savedAt, cachedSavedAt)) {
             setProgress(remote.progress);
             setExam(remote.activeExam && remote.activeExam.endsAt > Date.now() ? remote.activeExam : null);
             lastSynced.current = JSON.stringify({ progress: remote.progress, activeExam: remote.activeExam });
+            localStorage.setItem(LOCAL_SAVED_AT_KEY, remote.savedAt);
             setSyncStatus("synced");
           } else if (!cancelled) {
             await saveRemote(next, nextExam, cachedSyncKey, cachedGithubToken);
@@ -221,6 +250,7 @@ export default function Home() {
     if (!hydrated) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+      localStorage.setItem(LOCAL_SAVED_AT_KEY, new Date().toISOString());
     } catch { /* Storage can be unavailable in private browsing. */ }
   }, [progress, hydrated]);
 
@@ -282,6 +312,7 @@ export default function Home() {
   const practicePool = useMemo(() => practiceUnit === "all" ? questions : questions.filter((question) => question.unit === practiceUnit), [practiceUnit]);
   const practiceQuestion = practicePool.find((question) => question.id === practiceQuestionId) ?? null;
   const readiness = useMemo(() => calculateReadiness(progress, questions.length), [progress]);
+  const passEstimate = useMemo(() => calculatePassEstimate(progress, questions.length), [progress]);
   const schedule = useMemo(() => calculateSchedule(progress, readiness.total, new Date(), questions.length), [progress, readiness.total]);
   const examQuestions = exam ? exam.order.map((id) => questions.find((question) => question.id === id)!).filter(Boolean) : [];
   const currentExamQuestion = exam ? examQuestions[exam.index] : null;
@@ -451,8 +482,8 @@ export default function Home() {
   }
 
   async function connectSync() {
-    if (syncKey) sessionStorage.setItem("cpre-english-study:sync-key", syncKey);
-    if (githubToken) sessionStorage.setItem("cpre-english-study:github-token", githubToken);
+    if (syncKey) localStorage.setItem(SYNC_KEY_STORAGE, syncKey);
+    if (githubToken) localStorage.setItem(GITHUB_TOKEN_STORAGE, githubToken);
     setSyncStatus("loading");
     try {
       const response = await fetch("/api/progress", { headers: syncHeaders(), cache: "no-store" });
@@ -463,10 +494,12 @@ export default function Home() {
       if (!response.ok) throw new Error("sync_failed");
       const payload = await response.json() as { exists?: boolean; document?: unknown };
       const remote = parseSyncDocument(payload.document);
-      if (payload.exists && remote) {
+      const localSavedAt = localStorage.getItem(LOCAL_SAVED_AT_KEY) || "";
+      if (payload.exists && remote && shouldUseRemote(progress, remote.savedAt, localSavedAt)) {
         setProgress(remote.progress);
         setExam(remote.activeExam && remote.activeExam.endsAt > Date.now() ? remote.activeExam : null);
         lastSynced.current = JSON.stringify({ progress: remote.progress, activeExam: remote.activeExam });
+        localStorage.setItem(LOCAL_SAVED_AT_KEY, remote.savedAt);
         setSyncStatus("synced");
       } else {
         await saveRemote(progress, exam);
@@ -635,6 +668,11 @@ export default function Home() {
             <div className="readiness-total"><div className="readiness-number"><strong>{readiness.total}</strong><span>/ 100</span></div><div><b>{readinessLabel}</b><p>「どのくらい頭に入っていそうか」の推定値。合格を保証する数値ではない</p></div></div>
             {schedule && progress.targetExamDate ? <div className={`schedule-summary ${schedule.status}`}><span>{scheduleLabel}</span><strong>あと {schedule.daysLeft} 日</strong><p>{new Intl.DateTimeFormat("ja-JP", { dateStyle: "long" }).format(new Date(`${progress.targetExamDate}T00:00:00`))}</p><small>{scheduleMessage}</small></div> : <div className="schedule-summary unset"><span>STUDY PLAN</span><strong>受験日を設定</strong><p>予定日から、今日必要な進捗と1日あたりの問題数を計算</p></div>}
           </div>
+          <div className="pass-estimate" aria-label="現在の合格見込み">
+            <div><span>今受けた場合の合格見込み</span><strong>{passEstimate.chancePercent < 1 ? "<1%" : `${passEstimate.chancePercent}%`}</strong></div>
+            <div><span>推定得点</span><strong>{passEstimate.projectedScore}%</strong></div>
+            <p>{passEstimate.basis === "mock" ? "最新模試を70%、練習履歴を30%として推定" : `模試未実施。正誤を確認できた${passEstimate.answeredQuestions}/${questions.length}問だけを学習証拠として推定`}</p>
+          </div>
           <div className="readiness-breakdown">
             {[
               ["問題の網羅", readiness.coverage, "25%"],
@@ -646,6 +684,7 @@ export default function Home() {
           </div>
           {schedule && <div className="schedule-track"><div><span>今日までに必要な進捗</span><strong>{schedule.expectedByToday}%</strong></div><div className="schedule-rail"><i style={{ width: `${schedule.expectedByToday}%` }} /><b style={{ left: `${readiness.total}%` }} aria-label={`現在の定着度 ${readiness.total}%`} /></div><div className="schedule-legend"><span>計画</span><span>現在 {readiness.total}%</span></div></div>}
           <details className="readiness-definition"><summary>定着度の計算方法</summary><p>定着度 = 全{questions.length}問の網羅率×0.25 + 全問題中の正答済み率×0.30 + 教材読了率×0.15 + 2回以上連続正解した問題の割合×0.10 + 最新模試×0.20。少数問だけ正解率100%でも、未回答分は加点しない</p></details>
+          <details className="readiness-definition"><summary>合格見込みの計算方法</summary><p>練習のみの場合は、正答率の90%信頼下限×問題網羅率 + 未回答分×0.25から推定得点を出す。模試がある場合は最新模試70% + 練習推定30%。その推定得点で45問中70%以上になる確率を表示する。実試験は1〜3点配点のため、合格を保証する数値ではない</p></details>
         </section>
 
         <section className="metric-grid" aria-label="Study metrics">
@@ -839,7 +878,7 @@ export default function Home() {
         <header className="page-head source-head"><div><span className="eyebrow">ABOUT & SOURCES</span><h1>Grounded, traceable, unofficial.</h1><p>Only the listed English IREB materials are used. Official long-form text and official practice questions are not republished.</p></div><button className="button secondary" onClick={() => void refreshSources()} disabled={sourceStatus === "checking"}>{sourceStatus === "checking" ? "Checking…" : "Refresh source status"}</button></header>
         <div className={`status-line ${sourceStatus === "cached" ? "warning" : ""}`}><i />{sourceStatus === "cached" ? `Offline — showing cached metadata. ${formatChecked(progress.lastSourceCheck)}` : `${sourceStatus === "online" ? "Official download center reached. " : ""}${formatChecked(progress.lastSourceCheck)}`}</div>
         <div className="source-list">{sources.map((source) => <a className="source-card panel" href={source.url} target="_blank" rel="noreferrer" key={source.id}><div><span>{source.id}</span><h2>{source.title}</h2><p>Version {source.version} · {source.chapter}</p></div><strong>↗</strong></a>)}</div>
-        <section className="policy-grid"><article className="panel"><span className="eyebrow">CONTENT POLICY</span><h2>Original questions only</h2><p>Question scenarios, prompts, options, and explanations are independently written from syllabus objectives. They are not official exam questions.</p></article><article className="panel sync-panel"><span className="eyebrow">YOUR DATA</span><h2>Private GitHub sync</h2><p>Progress and active exams are committed to the private CPRE-data repository. Browser storage is only an offline cache.</p><div className={`sync-state ${syncStatus}`}><i />{syncLabel}</div>{syncStatus === "setup" && <><label>Fine-grained GitHub token<input type="password" value={githubToken} autoComplete="off" onChange={(event) => setGithubToken(event.target.value)} placeholder="github_pat_…" /></label><p className="sync-help">Create it for <strong>CPRE-data</strong> only, with <strong>Contents: Read and write</strong>. It stays in this browser tab session and is never committed.</p><a className="text-button" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create token on GitHub ↗</a></>}<div className="sync-actions"><button className="button compact secondary" onClick={() => void connectSync()} disabled={syncStatus === "setup" && !githubToken}>{syncStatus === "setup" ? "Connect" : "Sync now"}</button><button className="text-button" onClick={() => void shareProgress()}>Copy backup snapshot</button></div></article></section>
+        <section className="policy-grid"><article className="panel"><span className="eyebrow">CONTENT POLICY</span><h2>Original questions only</h2><p>Question scenarios, prompts, options, and explanations are independently written from syllabus objectives. They are not official exam questions.</p></article><article className="panel sync-panel"><span className="eyebrow">YOUR DATA</span><h2>Private GitHub sync</h2><p>Progress and active exams are committed to the private CPRE-data repository. Browser storage is only an offline cache.</p><div className={`sync-state ${syncStatus}`}><i />{syncLabel}</div>{syncStatus === "setup" && <><label>Fine-grained GitHub token<input type="password" value={githubToken} autoComplete="off" onChange={(event) => setGithubToken(event.target.value)} placeholder="github_pat_…" /></label><p className="sync-help">Create it for <strong>CPRE-data</strong> only, with <strong>Contents: Read and write</strong>. It remains on this device so sync continues after closing the tab, and is never committed.</p><a className="text-button" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create token on GitHub ↗</a></>}<div className="sync-actions"><button className="button compact secondary" onClick={() => void connectSync()} disabled={syncStatus === "setup" && !githubToken}>{syncStatus === "setup" ? "Connect" : "Sync now"}</button><button className="text-button" onClick={() => void shareProgress()}>Copy backup snapshot</button></div></article></section>
       </>
     );
   }

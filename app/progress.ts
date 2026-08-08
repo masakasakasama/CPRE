@@ -38,6 +38,14 @@ export type ReadinessBreakdown = {
   mock: number;
 };
 
+export type PassEstimate = {
+  chancePercent: number;
+  projectedScore: number;
+  answeredQuestions: number;
+  correctQuestions: number;
+  basis: "practice" | "mock";
+};
+
 export type ScheduleProgress = {
   daysLeft: number;
   expectedByToday: number;
@@ -225,6 +233,53 @@ export function calculateReadiness(progress: Progress, totalQuestions = 45, tota
     study: Math.round(study),
     review: Math.round(review),
     mock: Math.round(mock),
+  };
+}
+
+function combinations(n: number, k: number) {
+  const count = Math.min(k, n - k);
+  let result = 1;
+  for (let index = 1; index <= count; index += 1) result = result * (n - count + index) / index;
+  return result;
+}
+
+function binomialTail(trials: number, required: number, probability: number) {
+  let total = 0;
+  for (let successes = required; successes <= trials; successes += 1) {
+    total += combinations(trials, successes) * probability ** successes * (1 - probability) ** (trials - successes);
+  }
+  return clamp(total * 100);
+}
+
+function wilsonLowerBound(successes: number, trials: number, z = 1.645) {
+  if (!trials) return 0;
+  const rate = successes / trials;
+  const zSquared = z * z;
+  const denominator = 1 + zSquared / trials;
+  const center = rate + zSquared / (2 * trials);
+  const margin = z * Math.sqrt(rate * (1 - rate) / trials + zSquared / (4 * trials * trials));
+  return clamp((center - margin) / denominator, 0, 1);
+}
+
+export function calculatePassEstimate(progress: Progress, totalQuestions = 45, examQuestions = 45): PassEstimate {
+  const answers = Object.values(progress.answered);
+  const answeredQuestions = answers.length;
+  const correctQuestions = answers.filter((answer) => answer.correct).length;
+  const coverage = clamp(answeredQuestions / Math.max(1, totalQuestions), 0, 1);
+  const demonstratedAccuracy = wilsonLowerBound(correctQuestions, answeredQuestions);
+  const unseenBaseline = 0.25;
+  const practiceProjection = coverage * demonstratedAccuracy + (1 - coverage) * unseenBaseline;
+  const latestMock = progress.mockHistory[0];
+  const projectedRate = latestMock
+    ? clamp(latestMock.percent / 100, 0, 1) * 0.7 + practiceProjection * 0.3
+    : practiceProjection;
+  const requiredCorrect = Math.ceil(examQuestions * 0.7);
+  return {
+    chancePercent: Math.round(binomialTail(examQuestions, requiredCorrect, projectedRate)),
+    projectedScore: Math.round(projectedRate * 100),
+    answeredQuestions,
+    correctQuestions,
+    basis: latestMock ? "mock" : "practice",
   };
 }
 
