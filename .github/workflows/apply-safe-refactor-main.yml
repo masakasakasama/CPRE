@@ -1,0 +1,33 @@
+name: Apply validated v0.13 refactor
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/apply-safe-refactor-main.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply exact refactor
+        run: node scripts/apply-safe-refactor-main.mjs
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run content:validate
+      - run: npm run test
+      - name: Commit validated refactor
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx package.json package-lock.json README.md handoff.md tests/question-grading-contract.json tests/question-contract.test.mjs
+          git commit -m "Release safe refactor v0.13.0"
+          git push
