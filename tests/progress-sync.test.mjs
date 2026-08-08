@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { questions } from "../app/data.ts";
 import { MOCK_BLUEPRINT, selectMockExamQuestions } from "../app/exam.ts";
-import { calculateNextReview, calculateReadiness, calculateSchedule, getAnswerStats, getLastLearningActivity, initialProgress, makeSyncDocument, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt } from "../app/progress.ts";
+import { calculateNextReview, calculatePassEstimate, calculateReadiness, calculateSchedule, getAnswerStats, getLastLearningActivity, initialProgress, makeSyncDocument, parseSyncDocument, selectNextQuestionId, upsertAnswerAttempt } from "../app/progress.ts";
 
 test("accepts a complete GitHub progress document", () => {
   const document = makeSyncDocument({
@@ -57,6 +57,30 @@ test("does not inflate readiness from a few correct answers", () => {
     review: 0,
     mock: 0,
   });
+});
+
+test("keeps the pass estimate conservative when most questions are unseen", () => {
+  const answered = Object.fromEntries(Array.from({ length: 30 }, (_, index) => [
+    `q${index + 1}`,
+    { selected: [0], correct: true, lastAt: "2026-08-08T00:00:00.000Z" },
+  ]));
+  assert.deepEqual(calculatePassEstimate({ ...initialProgress, answered }, 185), {
+    chancePercent: 0,
+    projectedScore: 36,
+    answeredQuestions: 30,
+    correctQuestions: 30,
+    basis: "practice",
+  });
+});
+
+test("uses the latest mock as the main pass-estimate signal", () => {
+  const estimate = calculatePassEstimate({
+    ...initialProgress,
+    mockHistory: [{ at: "2026-08-08T00:00:00.000Z", percent: 80, correct: 36, points: 36, total: 45 }],
+  }, 185);
+  assert.equal(estimate.basis, "mock");
+  assert.equal(estimate.projectedScore, 63);
+  assert.ok(estimate.chancePercent > 0);
 });
 
 test("counts a question as repeatedly mastered after two consecutive correct answers", () => {

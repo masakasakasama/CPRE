@@ -15,7 +15,7 @@
 | ソースID | 資料 | 計画時の版 | 使用目的 | 公開物への扱い |
 |---|---|---:|---|---|
 | `fl-syllabus-en` | CPRE Foundation Level Syllabus | 3.3.0 | 章構成、Educational Objective（EO）、Cognitive Level、重要用語、学習範囲 | EO番号、短い見出し、用語、出典情報を利用。説明文は独自に作成 |
-| `fl-handbook-en` | CPRE Foundation Level Handbook | 1.3.1 | EOの理解、章ごとの概念関係、解説の事実確認 | 原文、図表、定義、例を転載せず、独自の日本語解説に再構成 |
+| `fl-handbook-en` | CPRE Foundation Level Handbook | 1.3.2 | EOの理解、章ごとの概念関係、解説の事実確認 | 原文、図表、定義、例を転載せず、独自の日本語解説に再構成 |
 | `cpre-glossary-en` | CPRE Glossary | 2.2.0 | 試験対象の英語用語と概念の整合確認 | 英語の用語名のみを基本とし、定義文は転載せず独自に説明 |
 | `fl-exam-regulations-en` | Foundation Level & RE@Agile Primer Examination Regulations | 5.6.2 | 試験時間、問題数、問題形式、採点方式、合格基準の実装根拠 | 必要最小限の事実だけを表示し、例題本文は収録しない |
 | `fl-practice-exam-en` | CPRE Foundation Level Practice Examination | 2025.09.11 | 公式形式との整合を人手で確認するための参照専用資料 | 抽出・問題生成・配布の対象外。問題、選択肢、解答、解説を収録しない |

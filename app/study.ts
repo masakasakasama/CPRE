@@ -35,7 +35,7 @@ export const studyGuides: StudyGuide[] = [
       { en: "quality requirement", ja: "品質要求", note: "速さ、安全性、使いやすさなど" },
       { en: "constraint", ja: "制約", note: "技術や法規など、実現方法を限定する条件" },
     ],
-    source: "Syllabus 3.3.0 · Chapter 1 / Handbook 1.3.1 · Chapter 1",
+    source: "Syllabus 3.3.0 · Chapter 1 / Handbook 1.3.2 · Chapter 1",
   },
   {
     unit: 2,
@@ -60,7 +60,7 @@ export const studyGuides: StudyGuide[] = [
       { en: "validation", ja: "妥当性確認", note: "要求が本来のニーズに合っているか確かめる" },
       { en: "evolution", ja: "進化・変化", note: "要求が時間とともに変わること" },
     ],
-    source: "Syllabus 3.3.0 · Chapter 2 / Handbook 1.3.1 · Chapter 2",
+    source: "Syllabus 3.3.0 · Chapter 2 / Handbook 1.3.2 · Chapter 2",
   },
   {
     unit: 3,
@@ -85,7 +85,7 @@ export const studyGuides: StudyGuide[] = [
       { en: "context model", ja: "コンテキストモデル", note: "システムと周囲の関係を示すモデル" },
       { en: "glossary", ja: "用語集", note: "プロジェクト内の用語と意味をそろえるもの" },
     ],
-    source: "Syllabus 3.3.0 · Chapter 3 / Handbook 1.3.1 · Chapter 3",
+    source: "Syllabus 3.3.0 · Chapter 3 / Handbook 1.3.2 · Chapter 3",
   },
   {
     unit: 4,
@@ -111,7 +111,7 @@ export const studyGuides: StudyGuide[] = [
       { en: "requirements conflict", ja: "要求の衝突", note: "両立しない要求や関係者の意見の違い" },
       { en: "requirements validation", ja: "要求の妥当性確認", note: "要求がニーズを正しく表すかの確認" },
     ],
-    source: "Syllabus 3.3.0 · Chapter 4 / Handbook 1.3.1 · Chapter 4",
+    source: "Syllabus 3.3.0 · Chapter 4 / Handbook 1.3.2 · Chapter 4",
   },
   {
     unit: 5,
@@ -135,7 +135,7 @@ export const studyGuides: StudyGuide[] = [
       { en: "feedback loop", ja: "こまめな確認と反映", note: "結果を早く確認し、次の作業へ反映する循環" },
       { en: "tailoring", ja: "状況に合わせた調整", note: "活動、成果物、役割、時期を選び直すこと" },
     ],
-    source: "Syllabus 3.3.0 · Chapter 5 / Handbook 1.3.1 · Chapter 5",
+    source: "Syllabus 3.3.0 · Chapter 5 / Handbook 1.3.2 · Chapter 5",
   },
   {
     unit: 6,
@@ -162,7 +162,7 @@ export const studyGuides: StudyGuide[] = [
       { en: "traceability", ja: "追跡可能性", note: "要求の根拠と後続成果物をたどれること" },
       { en: "change request", ja: "変更要求", note: "承認済み要求の変更を提案する記録" },
     ],
-    source: "Syllabus 3.3.0 · Chapter 6 / Handbook 1.3.1 · Chapter 6",
+    source: "Syllabus 3.3.0 · Chapter 6 / Handbook 1.3.2 · Chapter 6",
   },
   {
     unit: 7,
@@ -188,6 +188,6 @@ export const studyGuides: StudyGuide[] = [
       { en: "pilot project", ja: "試験導入", note: "限定した範囲で効果とリスクを確かめること" },
       { en: "tool introduction", ja: "ツール導入", note: "役割、手順、研修、移行まで含む取り組み" },
     ],
-    source: "Syllabus 3.3.0 · Chapter 7 / Handbook 1.3.1 · Chapter 7",
+    source: "Syllabus 3.3.0 · Chapter 7 / Handbook 1.3.2 · Chapter 7",
   },
 ];

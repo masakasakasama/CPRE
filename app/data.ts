@@ -412,7 +412,7 @@ export const questions: Question[] = [...coreQuestions, ...additionalQuestions];
 
 export const sources = [
   { id: "fl-syllabus-en", title: "CPRE Foundation Level Syllabus", version: "3.3.0", chapter: "EU 1–7", url: "https://cpre.ireb.org/en/downloads-and-resources/downloads#cpre-foundation-level-syllabus" },
-  { id: "fl-handbook-en", title: "CPRE Foundation Level Handbook", version: "1.3.1", chapter: "Chapters 1–7", url: "https://cpre.ireb.org/en/downloads-and-resources/downloads#cpre-foundation-level-handbook" },
+  { id: "fl-handbook-en", title: "CPRE Foundation Level Handbook", version: "1.3.2", chapter: "Chapters 1–7", url: "https://cpre.ireb.org/en/downloads-and-resources/downloads#cpre-foundation-level-handbook" },
   { id: "cpre-glossary-en", title: "CPRE Glossary", version: "2.2.0", chapter: "Definitions of Terms", url: "https://cpre.ireb.org/en/downloads-and-resources/downloads#cpre-glossary" },
   { id: "fl-exam-regulations-en", title: "Foundation Level Examination Regulations", version: "5.6.2", chapter: "Sections 1–2", url: "https://cpre.ireb.org/en/downloads-and-resources/downloads#cpre-foundation-level-and-agile-primer-examination-regulations" },
 ];
