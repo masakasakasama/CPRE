@@ -1,6 +1,5 @@
 import { Buffer } from "node:buffer";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { env } from "cloudflare:workers";
 import { NextResponse } from "next/server";
 import { mergeSyncDocument } from "../../progress-merge";
 import { parseSyncDocument, type SyncDocument } from "../../progress";
@@ -41,9 +40,10 @@ function userKey(request: Request) {
   return null;
 }
 
-function d1Database(): D1DatabaseLike | null {
+async function d1Database(): Promise<D1DatabaseLike | null> {
   try {
-    return (env as unknown as { DB?: D1DatabaseLike }).DB ?? null;
+    const workers = await import("cloudflare:workers");
+    return (workers.env as unknown as { DB?: D1DatabaseLike }).DB ?? null;
   } catch {
     return null;
   }
@@ -148,7 +148,7 @@ export async function GET(request: Request) {
   if (!key) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   try {
-    const db = d1Database();
+    const db = await d1Database();
     const remote = db ? await readD1(db, key) : await readGitHubRemote(request);
     return NextResponse.json({ exists: Boolean(remote.document), document: remote.document, storage: db ? "d1" : "github" });
   } catch (error) {
@@ -172,7 +172,7 @@ export async function PUT(request: Request) {
   if (!document) return NextResponse.json({ error: "invalid_progress" }, { status: 400 });
 
   try {
-    const db = d1Database();
+    const db = await d1Database();
     const saved = db ? await writeD1(db, key, document) : await writeGitHubMergedRemote(request, document);
     return NextResponse.json({ savedAt: saved.merged.savedAt, commit: saved.commit, storage: db ? "d1" : "github" });
   } catch (error) {
