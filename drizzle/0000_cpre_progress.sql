@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS cpre_progress (
+  user_key TEXT PRIMARY KEY,
+  document TEXT NOT NULL,
+  saved_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
