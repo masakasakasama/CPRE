@@ -181,6 +181,7 @@ export default function Home() {
     try {
       const params = new URLSearchParams(window.location.search);
       const shared = params.get("share");
+      const connect = params.get("connect");
       const cachedSyncKey = localStorage.getItem(SYNC_KEY_STORAGE) || "";
       const cachedGithubToken = localStorage.getItem(GITHUB_TOKEN_STORAGE) || "";
       const cachedSavedAt = localStorage.getItem(LOCAL_SAVED_AT_KEY) || "";
@@ -227,7 +228,8 @@ export default function Home() {
           if (!cancelled) setRemoteReady(true);
         }
       };
-      void restore();
+      if (connect) setSyncStatus("loading");
+      else void restore();
     } catch {
       setProgress(initialProgress);
       setSyncStatus("offline");
@@ -238,6 +240,48 @@ export default function Home() {
     return () => { cancelled = true; };
     // Restore the local cache before contacting the durable remote store.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("connect");
+    if (!token) return;
+    let cancelled = false;
+    const connectDevice = async () => {
+      try {
+        const claimed = await fetch("/api/connect/claim", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (!claimed.ok) throw new Error("claim_failed");
+        const { syncKey: claimedKey } = await claimed.json() as { syncKey?: string };
+        if (!claimedKey) throw new Error("claim_failed");
+        const response = await fetch("/api/progress", { headers: { "x-cpre-sync-key": claimedKey }, cache: "no-store" });
+        if (!response.ok) throw new Error("restore_failed");
+        const payload = await response.json() as { exists?: boolean; document?: unknown };
+        const remote = parseSyncDocument(payload.document);
+        if (!payload.exists || !remote || cancelled) throw new Error("restore_failed");
+        localStorage.setItem(SYNC_KEY_STORAGE, claimedKey);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(remote.progress));
+        localStorage.setItem(LOCAL_SAVED_AT_KEY, remote.savedAt);
+        if (remote.activeExam) localStorage.setItem(EXAM_KEY, JSON.stringify(remote.activeExam));
+        else localStorage.removeItem(EXAM_KEY);
+        window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
+        setSyncKey(claimedKey);
+        setProgress(remote.progress);
+        setExam(remote.activeExam && remote.activeExam.endsAt > Date.now() ? remote.activeExam : null);
+        lastSynced.current = JSON.stringify({ progress: remote.progress, activeExam: remote.activeExam });
+        setSyncStatus("synced");
+        setRemoteReady(true);
+      } catch {
+        if (!cancelled) {
+          setSyncStatus("setup");
+          setRemoteReady(false);
+        }
+      }
+    };
+    void connectDevice();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

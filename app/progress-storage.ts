@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless";
+import { createHash, randomBytes } from "node:crypto";
 import { mergeSyncDocument } from "./progress-merge";
 import { parseSyncDocument, type SyncDocument } from "./progress";
 
@@ -28,6 +29,14 @@ async function ensureTables(sql: NonNullable<ReturnType<typeof database>>) {
       raw_local_saved_at TEXT,
       imported_document JSONB NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS cpre_device_claims (
+      token_sha256 TEXT PRIMARY KEY,
+      user_key TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      claimed_at TIMESTAMPTZ
     )
   `;
 }
@@ -77,4 +86,33 @@ export async function writePostgres(userKey: string, incoming: SyncDocument) {
     }
   }
   throw new Error("postgres_write_conflict");
+}
+
+export async function createDeviceClaim(userKey: string) {
+  const sql = database();
+  if (!sql) throw new Error("postgres_not_configured");
+  await ensureTables(sql);
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  await sql`
+    INSERT INTO cpre_device_claims (token_sha256, user_key, expires_at)
+    VALUES (${tokenHash}, ${userKey}, CURRENT_TIMESTAMP + INTERVAL '15 minutes')
+  `;
+  return token;
+}
+
+export async function claimDevice(token: string) {
+  const sql = database();
+  if (!sql) throw new Error("postgres_not_configured");
+  await ensureTables(sql);
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const rows = await sql`
+    UPDATE cpre_device_claims
+    SET claimed_at = CURRENT_TIMESTAMP
+    WHERE token_sha256 = ${tokenHash}
+      AND claimed_at IS NULL
+      AND expires_at > CURRENT_TIMESTAMP
+    RETURNING user_key
+  ` as { user_key: string }[];
+  return rows[0]?.user_key ?? null;
 }
