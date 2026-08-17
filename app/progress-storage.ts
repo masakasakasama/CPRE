@@ -1,5 +1,4 @@
 import { neon } from "@neondatabase/serverless";
-import { createHash, randomBytes } from "node:crypto";
 import { mergeSyncDocument } from "./progress-merge";
 import { parseSyncDocument, type SyncDocument } from "./progress";
 
@@ -29,14 +28,6 @@ async function ensureTables(sql: NonNullable<ReturnType<typeof database>>) {
       raw_local_saved_at TEXT,
       imported_document JSONB NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  `;
-  await sql`
-    CREATE TABLE IF NOT EXISTS cpre_migration_claims (
-      token_sha256 TEXT PRIMARY KEY,
-      user_key TEXT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      claimed_at TIMESTAMPTZ
     )
   `;
 }
@@ -86,63 +77,4 @@ export async function writePostgres(userKey: string, incoming: SyncDocument) {
     }
   }
   throw new Error("postgres_write_conflict");
-}
-
-export type RawMigrationBackup = {
-  rawProgress: string;
-  rawActiveExam: string | null;
-  rawLocalSavedAt: string | null;
-};
-
-export function backupSha256(raw: RawMigrationBackup) {
-  return createHash("sha256").update(JSON.stringify(raw)).digest("hex");
-}
-
-export async function importMigrationBackup(userKey: string, raw: RawMigrationBackup, document: SyncDocument) {
-  const sql = database();
-  if (!sql) throw new Error("postgres_not_configured");
-  await ensureTables(sql);
-  const backup = backupSha256(raw);
-  await sql`
-    INSERT INTO cpre_progress_backups
-      (backup_sha256, user_key, raw_progress, raw_active_exam, raw_local_saved_at, imported_document)
-    VALUES
-      (${backup}, ${userKey}, ${raw.rawProgress}, ${raw.rawActiveExam}, ${raw.rawLocalSavedAt}, ${JSON.stringify(document)}::jsonb)
-    ON CONFLICT (backup_sha256) DO NOTHING
-  `;
-  const saved = await writePostgres(userKey, document);
-  const claim = randomBytes(32).toString("base64url");
-  const claimHash = createHash("sha256").update(claim).digest("hex");
-  await sql`
-    INSERT INTO cpre_migration_claims (token_sha256, user_key, expires_at)
-    VALUES (${claimHash}, ${userKey}, CURRENT_TIMESTAMP + INTERVAL '24 hours')
-  `;
-  return { backup, claim, document: saved.merged };
-}
-
-export async function claimMigration(token: string) {
-  const sql = database();
-  if (!sql) throw new Error("postgres_not_configured");
-  await ensureTables(sql);
-  const tokenHash = createHash("sha256").update(token).digest("hex");
-  const rows = await sql`
-    UPDATE cpre_migration_claims
-    SET claimed_at = CURRENT_TIMESTAMP
-    WHERE token_sha256 = ${tokenHash}
-      AND claimed_at IS NULL
-      AND expires_at > CURRENT_TIMESTAMP
-    RETURNING user_key
-  ` as { user_key: string }[];
-  return rows[0]?.user_key ?? null;
-}
-
-export async function readBackup(backup: string) {
-  const sql = database();
-  if (!sql) throw new Error("postgres_not_configured");
-  await ensureTables(sql);
-  const rows = await sql`
-    SELECT backup_sha256, raw_progress, raw_active_exam, raw_local_saved_at, imported_document
-    FROM cpre_progress_backups WHERE backup_sha256 = ${backup} LIMIT 1
-  `;
-  return rows[0] ?? null;
 }

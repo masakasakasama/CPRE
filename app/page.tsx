@@ -71,19 +71,6 @@ function hasLearningData(progress: Progress) {
     || progress.bookmarks.length > 0;
 }
 
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-async function sha256(value: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 function shouldUseRemote(local: Progress, remoteSavedAt: string, localSavedAt: string) {
   if (hasLearningData(local) && !localSavedAt) {
     return new Date(remoteSavedAt).getTime() > latestProgressTimestamp(local);
@@ -152,8 +139,6 @@ export default function Home() {
   const [syncKey, setSyncKey] = useState("");
   const [githubToken, setGithubToken] = useState("");
   const [remoteReady, setRemoteReady] = useState(false);
-  const [migrationEnabled, setMigrationEnabled] = useState(false);
-  const [migrationStatus, setMigrationStatus] = useState<"idle" | "transferring" | "failed">("idle");
   const [toast, setToast] = useState("");
   const lastSynced = useRef("");
   const practiceCardRef = useRef<HTMLElement | null>(null);
@@ -196,7 +181,6 @@ export default function Home() {
     try {
       const params = new URLSearchParams(window.location.search);
       const shared = params.get("share");
-      const claim = params.get("claim");
       const cachedSyncKey = localStorage.getItem(SYNC_KEY_STORAGE) || "";
       const cachedGithubToken = localStorage.getItem(GITHUB_TOKEN_STORAGE) || "";
       const cachedSavedAt = localStorage.getItem(LOCAL_SAVED_AT_KEY) || "";
@@ -243,8 +227,7 @@ export default function Home() {
           if (!cancelled) setRemoteReady(true);
         }
       };
-      if (claim) setSyncStatus("loading");
-      else void restore();
+      void restore();
     } catch {
       setProgress(initialProgress);
       setSyncStatus("offline");
@@ -253,57 +236,8 @@ export default function Home() {
       setHydrated(true);
     }
     return () => { cancelled = true; };
-    // Initial migration reads the existing browser cache before GitHub.
+    // Restore the local cache before contacting the durable remote store.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const claim = new URLSearchParams(window.location.search).get("claim");
-    if (!claim) return;
-    let cancelled = false;
-    const exchange = async () => {
-      try {
-        const claimed = await fetch("/api/migration/claim", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: claim }),
-        });
-        if (!claimed.ok) throw new Error("claim_failed");
-        const { syncKey: claimedKey } = await claimed.json() as { syncKey?: string };
-        if (!claimedKey) throw new Error("claim_failed");
-        localStorage.setItem(SYNC_KEY_STORAGE, claimedKey);
-        window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
-        const response = await fetch("/api/progress", { headers: { "x-cpre-sync-key": claimedKey }, cache: "no-store" });
-        if (!response.ok) throw new Error("restore_failed");
-        const payload = await response.json() as { exists?: boolean; document?: unknown };
-        const remote = parseSyncDocument(payload.document);
-        if (!payload.exists || !remote) throw new Error("restore_failed");
-        if (cancelled) return;
-        setSyncKey(claimedKey);
-        setProgress(remote.progress);
-        setExam(remote.activeExam && remote.activeExam.endsAt > Date.now() ? remote.activeExam : null);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(remote.progress));
-        if (remote.activeExam) localStorage.setItem(EXAM_KEY, JSON.stringify(remote.activeExam));
-        localStorage.setItem(LOCAL_SAVED_AT_KEY, remote.savedAt);
-        lastSynced.current = JSON.stringify({ progress: remote.progress, activeExam: remote.activeExam });
-        setSyncStatus("synced");
-        setRemoteReady(true);
-      } catch {
-        if (!cancelled) {
-          setSyncStatus("offline");
-          setRemoteReady(false);
-        }
-      }
-    };
-    void exchange();
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/migration/status", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((payload: { enabled?: boolean } | null) => setMigrationEnabled(Boolean(payload?.enabled)))
-      .catch(() => setMigrationEnabled(false));
   }, []);
 
   useEffect(() => {
@@ -577,41 +511,17 @@ export default function Home() {
     }
   }
 
-  async function transferToVercel() {
-    const rawProgress = localStorage.getItem(STORAGE_KEY);
-    if (!rawProgress) {
-      setMigrationStatus("failed");
-      return;
-    }
-    setMigrationStatus("transferring");
+  async function copySyncKey() {
+    if (!syncKey) return;
     try {
-      const rawActiveExam = localStorage.getItem(EXAM_KEY);
-      const rawLocalSavedAt = localStorage.getItem(LOCAL_SAVED_AT_KEY);
-      const rawBackup = { rawProgress, rawActiveExam, rawLocalSavedAt };
-      const localProgress = parseProgress(JSON.parse(rawProgress));
-      const localExam = rawActiveExam ? parseActiveExam(JSON.parse(rawActiveExam)) : null;
-      if (!localProgress || (rawActiveExam && !localExam)) throw new Error("invalid_local_progress");
-      const response = await fetch("/api/migration/transfer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(rawBackup),
-      });
-      if (!response.ok) throw new Error("transfer_failed");
-      const result = await response.json() as { backupSha256?: string; document?: unknown; redirectUrl?: string };
-      const remote = parseSyncDocument(result.document);
-      const localShape = { progress: localProgress, activeExam: localExam };
-      const remoteShape = remote ? { progress: remote.progress, activeExam: remote.activeExam } : null;
-      const expectedBackup = await sha256(JSON.stringify(rawBackup));
-      if (!remote || stableStringify(localShape) !== stableStringify(remoteShape) || result.backupSha256 !== expectedBackup || !result.redirectUrl) {
-        throw new Error("verification_failed");
-      }
-      window.location.assign(result.redirectUrl);
+      await navigator.clipboard.writeText(syncKey);
+      setToast("Private connection key copied.");
     } catch {
-      setMigrationStatus("failed");
+      window.prompt("Copy this private connection key", syncKey);
     }
   }
 
-  const syncLabel = syncStatus === "synced" ? "Synced to GitHub" : syncStatus === "saving" ? "Saving to GitHub…" : syncStatus === "loading" ? "Loading GitHub data…" : syncStatus === "setup" ? "GitHub sync needs setup" : "Offline · cached locally";
+  const syncLabel = syncStatus === "synced" ? "Synced to secure cloud" : syncStatus === "saving" ? "Saving securely…" : syncStatus === "loading" ? "Loading cloud data…" : syncStatus === "setup" ? "Cloud sync needs setup" : "Offline · cached locally";
 
   function finishIntro(target: View) {
     localStorage.setItem(INTRO_KEY, "done");
@@ -716,7 +626,6 @@ export default function Home() {
       : "";
     return (
       <>
-        {migrationEnabled && <section className="panel migration-panel" lang="ja"><div><span className="eyebrow">SECURE MIGRATION</span><h2>学習データをVercelへ移す</h2><p>現在の全学習履歴と試験状態を生データのままバックアップし、照合後に新しいサイトを開く</p>{migrationStatus === "failed" && <small>転送または照合に失敗。旧データは変更されていない</small>}</div><button className="button primary" onClick={() => void transferToVercel()} disabled={migrationStatus === "transferring"}>{migrationStatus === "transferring" ? "転送・照合中…" : "バックアップして移行"}</button></section>}
         <section className="hero panel">
           <div>
             <span className="eyebrow">ENGLISH EXAM PREP · SYLLABUS 3.3.0</span>
@@ -968,7 +877,7 @@ export default function Home() {
     const reviewQuestions = progress.review.map((id) => questions.find((question) => question.id === id)).filter(Boolean) as Question[];
     return (
       <>
-        <header className="page-head"><span className="eyebrow">REVIEW</span><h1>Turn misses into signals.</h1><p>Your queue is saved to private Git history and cached locally for offline use.</p></header>
+        <header className="page-head"><span className="eyebrow">REVIEW</span><h1>Turn misses into signals.</h1><p>Your queue is saved to the private cloud and cached locally for offline use.</p></header>
         {!reviewQuestions.length ? <section className="empty panel"><span>✓</span><h2>Your review queue is clear.</h2><p>Missed practice and mock-exam questions will appear here.</p><button className="button primary" onClick={() => beginPractice("all")}>Practice now</button></section> : <div className="review-list">{reviewQuestions.map((question) => { const record = progress.answered[question.id]; return <article className="review-card panel" key={question.id}><div className="review-label"><span>EU {question.unit}</span><span>{question.eo}</span><span>{question.id}</span></div><h2>{question.prompt}</h2><p className="answer-line">Correct: {question.correct.map((index) => question.options[index]).join(" · ")}</p><p className="jp-note" lang="ja">{question.explanationJa}</p><div className="feedback-meta"><span>Keyword: {question.keyword}</span><span>{question.source}</span></div><div className="review-actions"><small>{record ? `Last attempt: ${record.correct ? "correct" : "incorrect"}` : "From mock exam"}</small><button className="button compact secondary" onClick={() => setProgress((current) => ({ ...current, review: current.review.filter((id) => id !== question.id) }))}>Mark mastered</button></div></article>; })}</div>}
       </>
     );
@@ -980,7 +889,7 @@ export default function Home() {
         <header className="page-head source-head"><div><span className="eyebrow">ABOUT & SOURCES</span><h1>Grounded, traceable, unofficial.</h1><p>Only the listed English IREB materials are used. Official long-form text and official practice questions are not republished.</p></div><button className="button secondary" onClick={() => void refreshSources()} disabled={sourceStatus === "checking"}>{sourceStatus === "checking" ? "Checking…" : "Refresh source status"}</button></header>
         <div className={`status-line ${sourceStatus === "cached" ? "warning" : ""}`}><i />{sourceStatus === "cached" ? `Offline — showing cached metadata. ${formatChecked(progress.lastSourceCheck)}` : `${sourceStatus === "online" ? "Official download center reached. " : ""}${formatChecked(progress.lastSourceCheck)}`}</div>
         <div className="source-list">{sources.map((source) => <a className="source-card panel" href={source.url} target="_blank" rel="noreferrer" key={source.id}><div><span>{source.id}</span><h2>{source.title}</h2><p>Version {source.version} · {source.chapter}</p></div><strong>↗</strong></a>)}</div>
-        <section className="policy-grid"><article className="panel"><span className="eyebrow">CONTENT POLICY</span><h2>Original questions only</h2><p>Question scenarios, prompts, options, and explanations are independently written from syllabus objectives. They are not official exam questions.</p></article><article className="panel sync-panel"><span className="eyebrow">YOUR DATA</span><h2>Private GitHub sync</h2><p>Progress and active exams are committed to the private CPRE-data repository. Browser storage is only an offline cache.</p><div className={`sync-state ${syncStatus}`}><i />{syncLabel}</div>{syncStatus === "setup" && <><label>Fine-grained GitHub token<input type="password" value={githubToken} autoComplete="off" onChange={(event) => setGithubToken(event.target.value)} placeholder="github_pat_…" /></label><p className="sync-help">Create it for <strong>CPRE-data</strong> only, with <strong>Contents: Read and write</strong>. It remains on this device so sync continues after closing the tab, and is never committed.</p><a className="text-button" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create token on GitHub ↗</a></>}<div className="sync-actions"><button className="button compact secondary" onClick={() => void connectSync()} disabled={syncStatus === "setup" && !githubToken}>{syncStatus === "setup" ? "Connect" : "Sync now"}</button><button className="text-button" onClick={() => void shareProgress()}>Copy backup snapshot</button></div></article></section>
+        <section className="policy-grid"><article className="panel"><span className="eyebrow">CONTENT POLICY</span><h2>Original questions only</h2><p>Question scenarios, prompts, options, and explanations are independently written from syllabus objectives. They are not official exam questions.</p></article><article className="panel sync-panel"><span className="eyebrow">YOUR DATA</span><h2>Private cloud sync</h2><p>Progress and active exams are stored in the durable private database. Browser storage is only an offline cache.</p><div className={`sync-state ${syncStatus}`}><i />{syncLabel}</div>{syncStatus === "setup" && <><label>Private connection key<input type="password" value={syncKey} autoComplete="off" onChange={(event) => setSyncKey(event.target.value)} /></label><p className="sync-help">Enter the connection key copied from your current device. Keep it private.</p></>}<div className="sync-actions"><button className="button compact secondary" onClick={() => void connectSync()} disabled={syncStatus === "setup" && !syncKey && !githubToken}>{syncStatus === "setup" ? "Connect" : "Sync now"}</button>{syncKey && <button className="text-button" onClick={() => void copySyncKey()}>Copy connection key</button>}<button className="text-button" onClick={() => void shareProgress()}>Copy backup snapshot</button></div></article></section>
       </>
     );
   }
@@ -993,7 +902,7 @@ export default function Home() {
       <aside className="sidebar">
         <button className="brand" onClick={() => setView("home")}><span>CR</span><div><strong>CPRE</strong><small>English Study</small></div></button>
         <nav aria-label="Primary navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => item.id === "practice" ? beginPractice("all") : setView(item.id)}><i>{item.id === "home" ? "⌂" : item.id === "learn" ? "≡" : item.id === "practice" ? "◇" : item.id === "exam" ? "◷" : "↺"}</i><span>{item.label}</span>{item.id === "review" && progress.review.length > 0 && <em>{progress.review.length}</em>}</button>)}</nav>
-        <div className="sidebar-foot"><button lang="ja" onClick={() => setShowIntro(true)}>コース概要を見る</button><button onClick={() => setView("sources")}>About & sources</button><button onClick={() => void connectSync()}>{syncLabel}</button><small>v{APP_VERSION} · GitHub + offline cache</small></div>
+        <div className="sidebar-foot"><button lang="ja" onClick={() => setShowIntro(true)}>コース概要を見る</button><button onClick={() => setView("sources")}>About & sources</button><button onClick={() => void connectSync()}>{syncLabel}</button><small>v{APP_VERSION} · cloud + offline cache</small></div>
       </aside>
       <main className="main-content">{view === "home" && renderHome()}{view === "learn" && renderLearn()}{view === "practice" && renderPractice()}{view === "exam" && renderExam()}{view === "review" && renderReview()}{view === "sources" && renderSources()}<footer><span>Unofficial CPRE Foundation Level study tool. · v{APP_VERSION}</span><button onClick={() => setView("sources")}>Sources & copyright</button></footer></main>
       <nav className="bottom-nav" aria-label="Mobile navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => item.id === "practice" ? beginPractice("all") : setView(item.id)}><i>{item.id === "home" ? "⌂" : item.id === "learn" ? "≡" : item.id === "practice" ? "◇" : item.id === "exam" ? "◷" : "↺"}</i><span>{item.short}</span></button>)}</nav>
