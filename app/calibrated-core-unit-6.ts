@@ -47,7 +47,7 @@ export const calibratedCoreUnit6Questions: Question[] = [
     id: "Q039", unit: 6, eo: "EO 6.5.1", kind: "boolean", points: 1,
     prompt: "True or False: Requirement attributes can be used to filter a requirements collection and create views for different stakeholder information needs.",
     options: ["True", "False"], correct: [0], keyword: "attribute",
-    explanationJa: "attributeにstatus、priority、ownerなどを持たせることで、目的に応じた抽出やviewを作れる。実務例（Polarion）: Requirement Work ItemにStatus=Approved、Priority=High、Owner=IVI Teamのようなfield値を持たせ、これらを条件にfilterすると、管理者向け（High Priorityのみ）やIVI担当向け（Owner=IVI Teamのみ）のviewを作れる。CPREではPolarion固有の操作ではなく、attribute → filter → stakeholder-specific viewという考え方が重要",
+    explanationJa: "attributeにstatus、priority、ownerなどを持たせることで、目的に応じた抽出やviewを作れる\n\n【実務例（Polarion）】Requirement Work ItemにStatus=Approved、Priority=High、Owner=IVI Teamのようなfield値を持たせ、これらを条件にfilterすると、管理者向け（High Priorityのみ）やIVI担当向け（Owner=IVI Teamのみ）のviewを作れる",
     source: "Syllabus 3.3.0 · 6.5",
   },
 ];
