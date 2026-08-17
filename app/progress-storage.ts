@@ -6,7 +6,7 @@ import { parseSyncDocument, type SyncDocument } from "./progress";
 type StoredRow = { document: unknown; revision: number };
 
 function database() {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
   return url ? neon(url) : null;
 }
 
@@ -42,7 +42,7 @@ async function ensureTables(sql: NonNullable<ReturnType<typeof database>>) {
 }
 
 export function hasPostgresStorage() {
-  return Boolean(process.env.DATABASE_URL);
+  return Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 }
 
 export async function readPostgres(userKey: string) {
