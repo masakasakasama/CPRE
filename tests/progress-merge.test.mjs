@@ -65,3 +65,32 @@ test("an older device snapshot cannot replace newer non-answer progress or activ
   assert.deepEqual(merged.progress.review, ["Q2"]);
   assert.deepEqual(merged.activeExam, remoteExam);
 });
+
+test("sync merge never truncates attempts or mock history", () => {
+  const attempts = Array.from({ length: 75 }, (_, index) => ({
+    selected: [index % 4],
+    correct: index % 2 === 0,
+    at: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+  }));
+  const mockHistory = Array.from({ length: 30 }, (_, index) => ({
+    at: new Date(Date.UTC(2026, 1, index + 1)).toISOString(),
+    percent: 70,
+    correct: 32,
+    points: 35,
+    total: 50,
+  }));
+  const remote = document({
+    ...initialProgress,
+    answered: { Q1: { selected: [0], correct: true, lastAt: attempts[39].at, attempts: attempts.slice(0, 40) } },
+    mockHistory: mockHistory.slice(0, 15),
+  }, "2026-02-15T00:00:00.000Z");
+  const incoming = document({
+    ...initialProgress,
+    answered: { Q1: { selected: [0], correct: true, lastAt: attempts.at(-1).at, attempts: attempts.slice(40) } },
+    mockHistory: mockHistory.slice(15),
+  }, "2026-03-01T00:00:00.000Z");
+
+  const merged = mergeSyncDocument(remote, incoming);
+  assert.equal(merged.progress.answered.Q1.attempts.length, 75);
+  assert.equal(merged.progress.mockHistory.length, 30);
+});

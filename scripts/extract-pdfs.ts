@@ -9,7 +9,7 @@ const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 for (const source of manifest.sources.filter((item: { enabled: boolean; usage: string; mediaType: string }) => item.enabled && item.usage === "extract" && item.mediaType === "application/pdf")) {
   const input = join(root, "data", "raw", source.id, source.version, `${source.id}.pdf`);
   const bytes = new Uint8Array(await readFile(input));
-  const document = await pdfjs.getDocument({ data: bytes, disableWorker: true }).promise;
+  const document = await pdfjs.getDocument({ data: bytes }).promise;
   const pages: { page: number; text: string }[] = [];
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
     const page = await document.getPage(pageNumber);

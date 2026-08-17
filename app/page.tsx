@@ -71,6 +71,19 @@ function hasLearningData(progress: Progress) {
     || progress.bookmarks.length > 0;
 }
 
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function sha256(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function shouldUseRemote(local: Progress, remoteSavedAt: string, localSavedAt: string) {
   if (hasLearningData(local) && !localSavedAt) {
     return new Date(remoteSavedAt).getTime() > latestProgressTimestamp(local);
@@ -139,6 +152,8 @@ export default function Home() {
   const [syncKey, setSyncKey] = useState("");
   const [githubToken, setGithubToken] = useState("");
   const [remoteReady, setRemoteReady] = useState(false);
+  const [migrationEnabled, setMigrationEnabled] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState<"idle" | "transferring" | "failed">("idle");
   const [toast, setToast] = useState("");
   const lastSynced = useRef("");
   const practiceCardRef = useRef<HTMLElement | null>(null);
@@ -179,7 +194,9 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     try {
-      const shared = new URLSearchParams(window.location.search).get("share");
+      const params = new URLSearchParams(window.location.search);
+      const shared = params.get("share");
+      const claim = params.get("claim");
       const cachedSyncKey = localStorage.getItem(SYNC_KEY_STORAGE) || "";
       const cachedGithubToken = localStorage.getItem(GITHUB_TOKEN_STORAGE) || "";
       const cachedSavedAt = localStorage.getItem(LOCAL_SAVED_AT_KEY) || "";
@@ -226,7 +243,8 @@ export default function Home() {
           if (!cancelled) setRemoteReady(true);
         }
       };
-      void restore();
+      if (claim) setSyncStatus("loading");
+      else void restore();
     } catch {
       setProgress(initialProgress);
       setSyncStatus("offline");
@@ -237,6 +255,55 @@ export default function Home() {
     return () => { cancelled = true; };
     // Initial migration reads the existing browser cache before GitHub.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const claim = new URLSearchParams(window.location.search).get("claim");
+    if (!claim) return;
+    let cancelled = false;
+    const exchange = async () => {
+      try {
+        const claimed = await fetch("/api/migration/claim", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: claim }),
+        });
+        if (!claimed.ok) throw new Error("claim_failed");
+        const { syncKey: claimedKey } = await claimed.json() as { syncKey?: string };
+        if (!claimedKey) throw new Error("claim_failed");
+        localStorage.setItem(SYNC_KEY_STORAGE, claimedKey);
+        window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
+        const response = await fetch("/api/progress", { headers: { "x-cpre-sync-key": claimedKey }, cache: "no-store" });
+        if (!response.ok) throw new Error("restore_failed");
+        const payload = await response.json() as { exists?: boolean; document?: unknown };
+        const remote = parseSyncDocument(payload.document);
+        if (!payload.exists || !remote) throw new Error("restore_failed");
+        if (cancelled) return;
+        setSyncKey(claimedKey);
+        setProgress(remote.progress);
+        setExam(remote.activeExam && remote.activeExam.endsAt > Date.now() ? remote.activeExam : null);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(remote.progress));
+        if (remote.activeExam) localStorage.setItem(EXAM_KEY, JSON.stringify(remote.activeExam));
+        localStorage.setItem(LOCAL_SAVED_AT_KEY, remote.savedAt);
+        lastSynced.current = JSON.stringify({ progress: remote.progress, activeExam: remote.activeExam });
+        setSyncStatus("synced");
+        setRemoteReady(true);
+      } catch {
+        if (!cancelled) {
+          setSyncStatus("offline");
+          setRemoteReady(false);
+        }
+      }
+    };
+    void exchange();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/migration/status", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload: { enabled?: boolean } | null) => setMigrationEnabled(Boolean(payload?.enabled)))
+      .catch(() => setMigrationEnabled(false));
   }, []);
 
   useEffect(() => {
@@ -510,6 +577,40 @@ export default function Home() {
     }
   }
 
+  async function transferToVercel() {
+    const rawProgress = localStorage.getItem(STORAGE_KEY);
+    if (!rawProgress) {
+      setMigrationStatus("failed");
+      return;
+    }
+    setMigrationStatus("transferring");
+    try {
+      const rawActiveExam = localStorage.getItem(EXAM_KEY);
+      const rawLocalSavedAt = localStorage.getItem(LOCAL_SAVED_AT_KEY);
+      const rawBackup = { rawProgress, rawActiveExam, rawLocalSavedAt };
+      const localProgress = parseProgress(JSON.parse(rawProgress));
+      const localExam = rawActiveExam ? parseActiveExam(JSON.parse(rawActiveExam)) : null;
+      if (!localProgress || (rawActiveExam && !localExam)) throw new Error("invalid_local_progress");
+      const response = await fetch("/api/migration/transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rawBackup),
+      });
+      if (!response.ok) throw new Error("transfer_failed");
+      const result = await response.json() as { backupSha256?: string; document?: unknown; redirectUrl?: string };
+      const remote = parseSyncDocument(result.document);
+      const localShape = { progress: localProgress, activeExam: localExam };
+      const remoteShape = remote ? { progress: remote.progress, activeExam: remote.activeExam } : null;
+      const expectedBackup = await sha256(JSON.stringify(rawBackup));
+      if (!remote || stableStringify(localShape) !== stableStringify(remoteShape) || result.backupSha256 !== expectedBackup || !result.redirectUrl) {
+        throw new Error("verification_failed");
+      }
+      window.location.assign(result.redirectUrl);
+    } catch {
+      setMigrationStatus("failed");
+    }
+  }
+
   const syncLabel = syncStatus === "synced" ? "Synced to GitHub" : syncStatus === "saving" ? "Saving to GitHub…" : syncStatus === "loading" ? "Loading GitHub data…" : syncStatus === "setup" ? "GitHub sync needs setup" : "Offline · cached locally";
 
   function finishIntro(target: View) {
@@ -615,6 +716,7 @@ export default function Home() {
       : "";
     return (
       <>
+        {migrationEnabled && <section className="panel migration-panel" lang="ja"><div><span className="eyebrow">SECURE MIGRATION</span><h2>学習データをVercelへ移す</h2><p>現在の全学習履歴と試験状態を生データのままバックアップし、照合後に新しいサイトを開く</p>{migrationStatus === "failed" && <small>転送または照合に失敗。旧データは変更されていない</small>}</div><button className="button primary" onClick={() => void transferToVercel()} disabled={migrationStatus === "transferring"}>{migrationStatus === "transferring" ? "転送・照合中…" : "バックアップして移行"}</button></section>}
         <section className="hero panel">
           <div>
             <span className="eyebrow">ENGLISH EXAM PREP · SYLLABUS 3.3.0</span>

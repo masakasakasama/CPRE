@@ -1,0 +1,7 @@
+import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  return NextResponse.json({ enabled: Boolean(process.env.CPRE_MIGRATION_TARGET_URL && process.env.CPRE_MIGRATION_TOKEN) });
+}

@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { mergeSyncDocument } from "../../progress-merge";
 import { parseSyncDocument, type SyncDocument } from "../../progress";
+import { hasPostgresStorage, readPostgres, writePostgres } from "../../progress-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -148,6 +149,10 @@ export async function GET(request: Request) {
   if (!key) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   try {
+    if (hasPostgresStorage()) {
+      const remote = await readPostgres(key);
+      return NextResponse.json({ exists: Boolean(remote.document), document: remote.document, storage: "postgres" });
+    }
     const db = await d1Database();
     const remote = db ? await readD1(db, key) : await readGitHubRemote(request);
     return NextResponse.json({ exists: Boolean(remote.document), document: remote.document, storage: db ? "d1" : "github" });
@@ -172,6 +177,10 @@ export async function PUT(request: Request) {
   if (!document) return NextResponse.json({ error: "invalid_progress" }, { status: 400 });
 
   try {
+    if (hasPostgresStorage()) {
+      const saved = await writePostgres(key, document);
+      return NextResponse.json({ savedAt: saved.merged.savedAt, commit: null, storage: "postgres" });
+    }
     const db = await d1Database();
     const saved = db ? await writeD1(db, key, document) : await writeGitHubMergedRemote(request, document);
     return NextResponse.json({ savedAt: saved.merged.savedAt, commit: saved.commit, storage: db ? "d1" : "github" });

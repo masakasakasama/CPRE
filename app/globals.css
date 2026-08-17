@@ -520,3 +520,21 @@ footer button { border: 0; background: none; color: var(--muted); cursor: pointe
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+.migration-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px;
+  margin-bottom: 22px;
+  border-color: rgba(190, 255, 87, 0.45);
+}
+
+.migration-panel h2 { margin: 8px 0; }
+.migration-panel p { margin: 0; color: var(--muted); }
+.migration-panel small { display: block; margin-top: 10px; color: #ff9999; }
+
+@media (max-width: 700px) {
+  .migration-panel { align-items: stretch; flex-direction: column; }
+  .migration-panel .button { width: 100%; }
+}

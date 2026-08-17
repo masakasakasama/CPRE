@@ -136,7 +136,7 @@ export function parseProgress(value: unknown): Progress | null {
       selected: raw.selected,
       correct: raw.correct,
       lastAt: raw.lastAt,
-      attempts: attempts.length ? attempts.slice(-50) : [{ selected: raw.selected, correct: raw.correct, at: raw.lastAt }],
+      attempts: attempts.length ? attempts : [{ selected: raw.selected, correct: raw.correct, at: raw.lastAt }],
     };
   }
 

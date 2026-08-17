@@ -15,7 +15,7 @@ function mergeAttempts(remote?: AnswerRecord, incoming?: AnswerRecord) {
   for (const attempt of [...attemptsOf(remote), ...attemptsOf(incoming)]) {
     merged.set(attempt.at, attempt);
   }
-  return [...merged.values()].sort(byTime).slice(-50);
+  return [...merged.values()].sort(byTime);
 }
 
 function newerAnswer(remote?: AnswerRecord, incoming?: AnswerRecord) {
@@ -44,8 +44,7 @@ function mergeMockHistory(remote: Progress["mockHistory"], incoming: Progress["m
   const merged = new Map<string, Progress["mockHistory"][number]>();
   for (const result of [...remote, ...incoming]) merged.set(result.at, result);
   return [...merged.values()]
-    .sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime())
-    .slice(0, 20);
+    .sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime());
 }
 
 function unique<T>(values: T[]) {
