@@ -26,7 +26,7 @@ const practicalExamplesByEo: Readonly<Record<string, string>> = {
   "EO 6.5.1": "【実務例（Polarion）】Requirement Work ItemにStatus=Approved、Priority=High、Owner=IVI Teamのようなfield値を持たせる。これらはrequirement本文ではなく管理用のattribute",
   "EO 6.5.2": "【実務例（Jira）】teamがPriority、Component、Assigneeだけで判断できるなら、その必要なfieldを維持する。利用しないcustom fieldまで増やさないことがattribute selectionの考え方",
   "EO 6.5.3": "【実務例（Jira）】JQLでpriority = High AND component = IVIのwork itemだけを表示すればselective viewのイメージ。dashboardでstatus別件数だけを表示すればaggregating viewに近い",
-  "EO 6.6.1": "【実務例（Polarion）】System Requirement → Software Requirement → System Testのlinkを保持すると、要求変更時に影響する下流成果物を追える。これはtraceabilityの代表例",
+  "EO 6.6.1": "【実務例（Polarion）】System Requirement → Software Requirement → System Testのlinkを保持すると、要求変更時に影響する設計やテストを追える。これはtraceabilityの代表例",
   "EO 6.6.2": "【実務例（Jira）】StoryとTestをIssue Linkで明示的に関連付ければexplicit traceability。同じ番号や似た命名だけで関係を推測するならimplicit traceabilityに近い",
   "EO 6.6.3": "【実務例（Polarion）】RequirementとTest Caseの関係をTraceability Matrixで一覧表示すると、ID間のexplicit traceをmatrix形式で表現できる",
   "EO 6.7.1": "【実務例（Jira）】新しい要求をStoryとしてbacklogへ追加し、既存work itemと一緒にimpactやpriorityを確認して順序を決める運用はiterativeなchange handlingの具体例",
