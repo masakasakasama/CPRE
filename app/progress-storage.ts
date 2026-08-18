@@ -116,3 +116,41 @@ export async function claimDevice(token: string) {
   ` as { user_key: string }[];
   return rows[0]?.user_key ?? null;
 }
+
+export type RawMigrationBackup = {
+  rawProgress: string;
+  rawActiveExam: string | null;
+  rawLocalSavedAt: string | null;
+};
+
+export function backupSha256(raw: RawMigrationBackup) {
+  return createHash("sha256").update(JSON.stringify(raw)).digest("hex");
+}
+
+export async function importMigrationBackup(userKey: string, raw: RawMigrationBackup, document: SyncDocument) {
+  const sql = database();
+  if (!sql) throw new Error("postgres_not_configured");
+  await ensureTables(sql);
+  const backup = backupSha256(raw);
+  await sql`
+    INSERT INTO cpre_progress_backups
+      (backup_sha256, user_key, raw_progress, raw_active_exam, raw_local_saved_at, imported_document)
+    VALUES
+      (${backup}, ${userKey}, ${raw.rawProgress}, ${raw.rawActiveExam}, ${raw.rawLocalSavedAt}, ${JSON.stringify(document)}::jsonb)
+    ON CONFLICT (backup_sha256) DO NOTHING
+  `;
+  const saved = await writePostgres(userKey, document);
+  const claim = await createDeviceClaim(userKey);
+  return { backup, claim, document: saved.merged };
+}
+
+export async function readBackup(backup: string) {
+  const sql = database();
+  if (!sql) throw new Error("postgres_not_configured");
+  await ensureTables(sql);
+  const rows = await sql`
+    SELECT backup_sha256, raw_progress, raw_active_exam, raw_local_saved_at, imported_document
+    FROM cpre_progress_backups WHERE backup_sha256 = ${backup} LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
